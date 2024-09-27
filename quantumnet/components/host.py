@@ -143,6 +143,8 @@ class ServerNode(Host):
         """Processa a requisição do cliente."""
         print(f"Servidor {self.host_id} processando a requisição.")
 
+    def color(self):
+        return 'green'  # Cor do servidor
 
 class ClientNode(Host):
     def __init__(self, host_id: int, **kwargs):
@@ -153,11 +155,14 @@ class ClientNode(Host):
         """Envia requisição ao servidor."""
         print(f"Cliente {self.host_id} enviando requisição para o servidor {server_id}.")
 
+    def color(self):
+        return 'red'  # Cor do cliente
 
 class RegularNode(Host):
     def __init__(self, host_id: int, **kwargs):
         super().__init__(host_id, **kwargs)
         self.role = 'regular'
     
-    
+    def color(self):
+        return 'blue'  # Cor do nó normal
     

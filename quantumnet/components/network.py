@@ -216,16 +216,19 @@ class Network():
             num_clients (int): Número de nós que serão clientes.
             *args (int): Argumentos para a topologia, geralmente o número de nós totais.
         """
+        # Converter o nome da topologia para minúsculas para aceitar qualquer variação de letras
+        topology_name = topology_name.lower()
+
         # Cria a topologia conforme o nome
-        if topology_name == 'Grade':
+        if topology_name == 'grade':
             if len(args) != 2:
                 raise Exception('Para a topologia Grade, são necessários dois argumentos.')
             self._graph = nx.grid_2d_graph(*args)
-        elif topology_name == 'Linha':
+        elif topology_name == 'linha':
             if len(args) != 1:
                 raise Exception('Para a topologia Linha, é necessário um argumento.')
             self._graph = nx.path_graph(*args)
-        elif topology_name == 'Anel':
+        elif topology_name == 'anel':
             if len(args) != 1:
                 raise Exception('Para a topologia Anel, é necessário um argumento.')
             self._graph = nx.cycle_graph(*args)
@@ -255,12 +258,12 @@ class Network():
         self.start_channels()
         self.start_eprs()
 
+
     def draw(self):
-        """
-        Desenha a rede com as cores previamente definidas.
-        """
-        nx.draw(self._graph, with_labels=True, node_color=self.node_colors)
+        node_colors = [self._hosts[node].color() for node in self._graph.nodes()]
+        nx.draw(self._graph, with_labels=True, node_color=node_colors, node_size=800)
         plt.show()
+
 
     
     def start_hosts(self, num_qubits: int = 10):
