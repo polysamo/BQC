@@ -35,6 +35,9 @@ class ApplicationLayer:
         self.logger.debug(f"Qubits usados na camada {self.__class__.__name__}: {self.used_qubits}")
         return self.used_qubits
     
+#  TODO: fazer o protocolo do andrews, BFK e do try2 e tentar abstrair algumas coisas e ultizar o qiskit 
+
+ 
     def run_app(self, app_name, *args):
         """
         Executa a aplicação desejada informando o nome fornecido.
@@ -46,54 +49,135 @@ class ApplicationLayer:
         if app_name == "QKD_E91":
             alice_id, bob_id, num_qubits = args
             return self.qkd_e91_protocol(alice_id,bob_id, num_qubits)
+        elif app_name == "AC_BQC":
+            alice_id, bob_id, num_qubits = args
+            return self.run_andrew_childs_protocol(alice_id,bob_id, num_qubits)
         else:
             self.logger.log(f"Aplicação não realizada ou não encontrada.")
             return False
-    
-
-    def prepare_e91_qubits(self, key, bases):
+        
+    def run_andrew_childs_protocol(self, alice_id, bob_id, num_qubits):
         """
-        Prepara os qubits de acordo com a chave e as bases fornecidas para o protocolo E91.
-
+        Implementa o protocolo onde Alice envia qubits únicos com informações clássicas, e Bob aplica operações.
+        
         Args:
-            key (list): Chave contendo a sequência de bits.
-            bases (list): Bases usadas para medir os qubits.
-
-        Returns:
-            list: Lista de qubits preparados.
+            alice_id (int): ID de Alice (cliente).
+            bob_id (int): ID de Bob (servidor).
+            num_qubits (int): Número de qubits a serem enviados.
         """
-        self._network.timeslot()  # Incrementa o timeslot
-        self.logger.debug(f"Timeslot incrementado na função prepare_e91_qubits: {self._network.get_timeslot()}")
-        qubits = []
-        for bit, base in zip(key, bases):
-            qubit = Qubit(qubit_id=random.randint(0, 1000))  # Cria um novo qubit com ID aleatório
-            if bit == 1:
-                qubit.apply_x()  # Aplica a porta X (NOT) ao qubit se o bit for 1
-            if base == 1:
-                qubit.apply_hadamard()  # Aplica a porta Hadamard ao qubit se a base for 1
-            qubits.append(qubit)  # Adiciona o qubit preparado à lista de qubits
+        alice = self._network.get_host(alice_id)
+        bob = self._network.get_host(bob_id)
+
+        # Passo 1: Alice prepara qubits únicos
+        qubits = [Qubit(qubit_id=random.randint(0, 1000)) for _ in range(num_qubits)]  # Alice cria qubits únicos
+        self.logger.log(f"Alice criou {len(qubits)} qubits.")
+
+        # Alice aplica operações aleatórias e cria uma mensagem clássica com instruções para o servidor
+        operations_classical_message = []  # Contém as instruções clássicas sobre as operações que o servidor deve aplicar
+        for qubit in qubits:
+            random_operation = self.apply_random_operation(qubit)  # Alice codifica o qubit com operação aleatória
+            operations_classical_message.append(random_operation)  # Instrução para servidor
+            self.logger.log(f"Alice aplicou {random_operation} no qubit {qubit.qubit_id}")
+
+        # Verificação de contagem de qubits antes de enviar para Bob
+        self.logger.log(f"Verificação de contagem: Alice tem {len(qubits)} qubits antes de enviar para Bob.")
+
+        # Passo 2: Alice envia os qubits para Bob
+        success = self._transport_layer.run_transport_layer(alice_id, bob_id, len(qubits))
+        if not success:
+            self.logger.log("Falha ao enviar os qubits para o servidor (Bob).")
+            return None
+        self.logger.log(f"Alice enviou {len(qubits)} qubits para Bob.")
+
+        # Passo 3: Alice envia informações clássicas sobre quais operações Bob deve aplicar
+        self.logger.log(f"Alice enviou as instruções clássicas: {operations_classical_message}.")
+
+        # Passo 4: Bob aplica as operações conforme instruções de Alice, sem medir
+        for qubit, operation in zip(qubits, operations_classical_message):
+            self.apply_operation_from_message(qubit, operation)
+        self.logger.log("Bob aplicou as operações instruídas por Alice nos qubits.")
+
+        # Verificação de contagem de qubits após operações de Bob
+        self.logger.log(f"Verificação de contagem: Bob tem {len(qubits)} qubits após aplicar as operações.")
+
+        # Passo 5: Bob devolve os qubits para Alice
+        success = self._transport_layer.run_transport_layer(bob_id, alice_id, len(qubits))
+        if not success:
+            self.logger.log(f"Falha ao devolver os qubits para Alice. Bob tinha {len(qubits)} qubits.")
+            return None
+        self.logger.log(f"Bob devolveu {len(qubits)} qubits para Alice.")
+
+        # Verificação de contagem de qubits após devolução para Alice
+        self.logger.log(f"Verificação de contagem: Alice tem {len(qubits)} qubits após receber de Bob.")
+
+        # Passo 6: Alice aplica decodificação com operações Clifford
+        for qubit, operation in zip(qubits, operations_classical_message):
+            self.apply_clifford_decoding(qubit, operation)
+            self.logger.log(f"Alice aplicou a decodificação Clifford no qubit {qubit.qubit_id}.")
+
+        # Verifique se o número de qubits está correto após a decodificação
+        if len(qubits) == num_qubits:
+            self.logger.log(f"Protocolo concluído com sucesso. Alice tem {len(qubits)} qubits decodificados.")
+        else:
+            self.logger.log(f"Erro: Alice tem {len(qubits)} qubits, mas deveria ter {num_qubits} qubits. Abortando.")
+            return None
+
         return qubits
-
-    def apply_bases_and_measure_e91(self, qubits, bases):
+    
+    def apply_random_operation(self, qubit):
         """
-        Aplica as bases de medição e mede os qubits no protocolo E91.
+        Aplica uma operação quântica aleatória (X, Y, Z ) ao qubit.
 
         Args:
-            qubits (list): Lista de qubits a serem medidos.
-            bases (list): Lista de bases a serem aplicadas para a medição.
+            qubit (Qubit): O qubit no qual aplicar a operação.
 
         Returns:
-            list: Resultados das medições.
+            str: A operação aplicada (para referência na decodificação).
         """
-        self._network.timeslot()  # Incrementa o timeslot
-        self.logger.debug(f"Timeslot incrementado na função apply_bases_and_measure_e91: {self._network.get_timeslot()}")
-        results = []
-        for qubit, base in zip(qubits, bases):
-            if base == 1:
-                qubit.apply_hadamard()  # Aplica a porta Hadamard antes de medir, se a base for 1
-            measurement = qubit.measure()  # Mede o qubit
-            results.append(measurement)  # Adiciona o resultado da medição à lista de resultados
-        return results
+        operations = ['X', 'Y', 'Z', 'I']  # Conjunto de operações que Alice pode aplicar
+        operation = random.choice(operations)
+        if operation == 'X':
+            qubit.apply_x()
+        elif operation == 'Y':
+            qubit.apply_y()
+        elif operation == 'Z':
+            qubit.apply_z()
+
+        return operation
+
+    def apply_operation_from_message(self, qubit, operation):
+        """
+        Aplica a operação recebida na mensagem clássica no servidor.
+        O servidor só aplica a operação e não realiza medições.
+
+        Args:
+            qubit (Qubit): O qubit no qual aplicar a operação.
+            operation (str): A operação que Bob deve aplicar (X, Y, Z ).
+        """
+        if operation == 'X':
+            qubit.apply_x()
+        elif operation == 'Y':
+            qubit.apply_y()
+        elif operation == 'Z':
+            qubit.apply_z()
+        # Outras operações podem ser adicionadas aqui conforme necessário
+
+    def apply_clifford_decoding(self, qubit, operation):
+        """
+        Aplica a operação de decodificação usando portas Clifford com base na operação original de Alice.
+
+        Args:
+            qubit (Qubit): O qubit a ser decodificado.
+            operation (str): A operação Pauli aplicada originalmente por Alice.
+        """
+        # Operações Pauli são autoinversas, mas aqui vamos simular que Alice está decodificando com operações Clifford
+        if operation == 'X':
+            qubit.apply_x()  # Aplica X para decodificar
+        elif operation == 'Y':
+            qubit.apply_y()  # Aplica Y para decodificar
+        elif operation == 'Z':
+            qubit.apply_z()  # Aplica Z para decodificar
+
 
     def qkd_e91_protocol(self, alice_id, bob_id, num_bits):
         """
@@ -158,3 +242,47 @@ class ApplicationLayer:
                 return final_key
 
         return None
+    
+    def prepare_e91_qubits(self, key, bases):
+        """
+        Prepara os qubits de acordo com a chave e as bases fornecidas para o protocolo E91.
+
+        Args:
+            key (list): Chave contendo a sequência de bits.
+            bases (list): Bases usadas para medir os qubits.
+
+        Returns:
+            list: Lista de qubits preparados.
+        """
+        self._network.timeslot()  # Incrementa o timeslot
+        self.logger.debug(f"Timeslot incrementado na função prepare_e91_qubits: {self._network.get_timeslot()}")
+        qubits = []
+        for bit, base in zip(key, bases):
+            qubit = Qubit(qubit_id=random.randint(0, 1000))  # Cria um novo qubit com ID aleatório
+            if bit == 1:
+                qubit.apply_x()  # Aplica a porta X (NOT) ao qubit se o bit for 1
+            if base == 1:
+                qubit.apply_hadamard()  # Aplica a porta Hadamard ao qubit se a base for 1
+            qubits.append(qubit)  # Adiciona o qubit preparado à lista de qubits
+        return qubits
+
+    def apply_bases_and_measure_e91(self, qubits, bases):
+        """
+        Aplica as bases de medição e mede os qubits no protocolo E91.
+
+        Args:
+            qubits (list): Lista de qubits a serem medidos.
+            bases (list): Lista de bases a serem aplicadas para a medição.
+
+        Returns:
+            list: Resultados das medições.
+        """
+        self._network.timeslot()  # Incrementa o timeslot
+        self.logger.debug(f"Timeslot incrementado na função apply_bases_and_measure_e91: {self._network.get_timeslot()}")
+        results = []
+        for qubit, base in zip(qubits, bases):
+            if base == 1:
+                qubit.apply_hadamard()  # Aplica a porta Hadamard antes de medir, se a base for 1
+            measurement = qubit.measure()  # Mede o qubit
+            results.append(measurement)  # Adiciona o resultado da medição à lista de resultados
+        return results

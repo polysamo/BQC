@@ -164,5 +164,5 @@ class RegularNode(Host):
         self.role = 'regular'
     
     def color(self):
-        return 'blue'  # Cor do nó normal
+        return '#1f78b8'  # Cor do nó normal
     

@@ -251,7 +251,7 @@ class Network():
         # Inicializa os nós restantes como regulares (cor azul)
         for node in range(num_clients + 1, total_nodes):
             self._hosts[node] = RegularNode(node)
-            self.node_colors.append('blue')
+            self.node_colors.append('#1f78b8')
 
         # Inicia os hosts, canais e pares EPRs
         self.start_hosts()
