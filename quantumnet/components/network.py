@@ -265,18 +265,39 @@ class Network():
         plt.show()
 
 
-    
     def start_hosts(self, num_qubits: int = 10):
         """
-        Inicializa os hosts da rede.
-        
+        Inicializa os hosts da rede com exceção do servidor (host 0).
+
         Args:
-            num_qubits (int): Número de qubits a serem inicializados.
+            num_qubits (int): Número de qubits a serem inicializados para cada host, exceto o host 0 (servidor).
         """
         for host_id in self._hosts:
+            # Evita que o servidor (host 0) receba qubits
+            if host_id == 0:
+                self.logger.log(f"Host {host_id} é o servidor, não receberá qubits.")
+                continue
+            
+            # Inicializa os qubits para os demais hosts
             for i in range(num_qubits):
-                self.physical.create_qubit(host_id, increment_timeslot=False,increment_qubits=False)
-        print("Hosts inicializados")    
+                self.physical.create_qubit(host_id, increment_timeslot=False, increment_qubits=False)
+            self.logger.log(f"Host {host_id} inicializado com {num_qubits} qubits.")
+        
+        print("Hosts inicializados")
+
+
+    
+    # def start_hosts(self, num_qubits: int = 10):
+    #     """
+    #     Inicializa os hosts da rede.
+        
+    #     Args:
+    #         num_qubits (int): Número de qubits a serem inicializados.
+    #     """
+    #     for host_id in self._hosts:
+    #         for i in range(num_qubits):
+    #             self.physical.create_qubit(host_id, increment_timeslot=False,increment_qubits=False)
+    #     print("Hosts inicializados")    
 
     def start_channels(self):
         """
