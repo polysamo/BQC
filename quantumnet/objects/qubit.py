@@ -57,3 +57,14 @@ class Qubit():
     def measure(self):
         """Realiza a medição do qubit no estado atual."""
         return self._qubit_state
+
+
+    def apply_controlled_phase(self, control_qubit):
+        """
+        Aplica a operação de fase controlada (C-phase) ao qubit atual condicionalmente ao estado do control_qubit.
+
+        Args:
+            control_qubit (Qubit): O qubit de controle da operação C-phase.
+        """
+        if control_qubit._qubit_state == 1:  # Se o qubit de controle estiver no estado |1>
+            self.apply_z()  # Aplica a porta Z no qubit alvo (modifica a fase)
