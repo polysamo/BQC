@@ -68,3 +68,21 @@ class Qubit():
         """
         if control_qubit._qubit_state == 1:  # Se o qubit de controle estiver no estado |1>
             self.apply_z()  # Aplica a porta Z no qubit alvo (modifica a fase)
+
+    def measure_in_basis(self, theta):
+        """
+        Mede o qubit na base definida pelo ângulo theta.
+
+        Args:
+            theta (float): O ângulo da base de medição (em radianos).
+
+        Returns:
+            int: O resultado da medição (0 ou 1).
+        """
+        # Simula a aplicação de uma rotação em função do ângulo theta.
+        # O cálculo usa uma aproximação simples de base de medição.
+        prob_0 = (1 + math.cos(theta)) / 2  # Probabilidade de medir |0>
+        
+        # Realiza a medição com base na probabilidade calculada.
+        result = 0 if random.uniform(0, 1) < prob_0 else 1
+        return result

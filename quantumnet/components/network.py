@@ -265,7 +265,7 @@ class Network():
         plt.show()
 
 
-    def start_hosts(self, num_qubits: int = 10):
+    def start_hosts(self, num_qubits: int = 0):
         """
         Inicializa os hosts da rede com exceção do servidor (host 0).
 
@@ -469,3 +469,81 @@ class Network():
                     new_fidelity = current_fidelity * decoherence_factor
                     epr.set_fidelity(new_fidelity)
 
+
+    # SIMULAÇÃO DA REDE 
+
+    def choose_clients_and_server(self):
+        """
+        Define o servidor como o nó 0 e seleciona 3 clientes aleatórios.
+
+        Returns:
+            tuple: Lista de clientes e ID do servidor.
+        """
+        clients = random.sample(range(1, 9), 3)  # Supondo que temos 9 nós e o nó 0 é o servidor
+        server = 0
+        return clients, server
+
+    def allocate_routes(self, clients, server):
+        """
+        Aloca rotas para cada cliente acessar o servidor.
+
+        Args:
+            clientes (list): Lista de clientes.
+            servidor (int): ID do servidor.
+
+        Returns:
+            dict: Dicionário de rotas alocadas para cada cliente.
+        """
+        rotas_alocadas = {}
+        for client in clients:
+            route = self.networklayer.short_route_valid(client, server)
+            if route:
+                self.logger.log(f"Rota alocada para o cliente {client} ao servidor {server}: {route}")
+                rotas_alocadas[client] = route
+            else:
+                self.logger.log(f"Falha ao alocar rota para o cliente {client}")
+        return rotas_alocadas
+
+    def execute_protocols(self, clients, server, rotas_alocadas):
+        """
+        Executa os protocolos designados para cada cliente utilizando as rotas alocadas.
+
+        Args:
+            clientes (list): Lista de IDs de clientes.
+            servidor (int): ID do servidor.
+            rotas_alocadas (dict): Dicionário de rotas alocadas.
+        """
+        applications = ["AC_BQC", "BFK_BQC", "TRY2_BQC"]
+        
+        for client in clients:
+            # Escolhe uma aplicação aleatória para cada cliente
+            application = random.choice(applications)
+            num_qubits = random.randint(3, 7)  # Escolhe um número de qubits aleatório
+
+            # Verifica se a aplicação é BFK_BQC, que precisa de um argumento adicional (número de rodadas)
+            if application == "BFK_BQC":
+                num_rounds = random.randint(1, 5)
+                comando = f'self.application_layer.run_app("{application}", {client}, {server}, {num_qubits}, {num_rounds})'
+            else:
+                comando = f'self.application_layer.run_app("{application}", {client}, {server}, {num_qubits})'
+            
+            self.logger.log(f"Executando {application} para o cliente {client} no servidor {server} com rota {rotas_alocadas[client]} e {num_qubits} qubits.")
+            
+            # Executa o comando da aplicação
+            exec(comando)  # Executa o protocolo
+
+            # Mantém o caminho ativo durante a execução
+            self.logger.log(f"Cliente {client} mantém a rota {rotas_alocadas[client]} durante a execução do protocolo.")
+
+    def simulation(self):
+        """
+        Função principal para simular o cenário com 1 servidor e 3 clientes acessando ao mesmo tempo.
+        """
+        # Selecionar clientes e servidor
+        clients, server = self.choose_clients_and_server()
+
+        # Alocar rotas para cada cliente
+        rotas_alocadas = self.allocate_routes(clients, server)
+        
+        # Executar protocolos para cada cliente com as rotas alocadas
+        self.execute_protocols(clients, server, rotas_alocadas)
