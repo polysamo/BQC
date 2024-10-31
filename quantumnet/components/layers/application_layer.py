@@ -22,6 +22,8 @@ class ApplicationLayer:
         self._transport_layer = transport_layer
         self.logger = Logger.get_instance()
         self.used_qubits = 0
+        self.used_eprs = 0
+        self.route_fidelities = []  # Armazena as fidelidades médias de cada rota
 
     def __str__(self):
         """ Retorna a representação em string da camada de aplicação. 
@@ -34,33 +36,36 @@ class ApplicationLayer:
         self.logger.debug(f"Qubits usados na camada {self.__class__.__name__}: {self.used_qubits}")
         return self.used_qubits
     
-    def run_app(self, app_name, *args):
+    def get_used_eprs(self):
+        self.logger.debug(f"Eprs usados na camada {self.__class__.__name__}: {self.used_eprs}")
+        return self.used_eprs
+    
+    def run_app(self, app_name, alice_id, bob_id, **kwargs):
         """
-        Executa um protocolo quântico com base no nome da aplicação fornecido.
+        Executa um protocolo quântico com base no nome da aplicação fornecido e em parâmetros adicionais.
 
         Args:
-            app_name : str : Nome do protocolo a ser executado (QKD_E91, AC_BQC, BFK_BQC, TRY2_BQC).
-            *args : Argumentos variáveis passados para o protocolo.
+            app_name : str : Nome do protocolo a ser executado (QKD_E91, AC_BQC, BFK_BQC).
+            alice_id : int : ID do cliente (Alice).
+            bob_id : int : ID do servidor (Bob).
+            **kwargs : Argumentos adicionais passados para o protocolo, como `num_qubits` e `num_rounds`.
 
         Returns:
             Depende do protocolo executado (chaves, resultados de medição ou estados quânticos).
         """
+        num_qubits = kwargs.get('num_qubits', 10)  # Valor padrão de 10 qubits
+        num_rounds = kwargs.get('num_rounds', 10)   # Valor padrão de 10 rodadas
+
         if app_name == "QKD_E91":
-            alice_id, bob_id, num_qubits = args
-            return self.qkd_e91_protocol(alice_id,bob_id, num_qubits)
+            return self.qkd_e91_protocol(alice_id, bob_id, num_qubits)
         elif app_name == "AC_BQC":
-            alice_id, bob_id, num_qubits = args
-            return self.run_andrews_childs_protocol(alice_id,bob_id, num_qubits)
+            return self.run_andrews_childs_protocol(alice_id, bob_id, num_qubits)
         elif app_name == "BFK_BQC":
-            alice_id, bob_id, num_qubits, num_rounds = args
-            return self.bfk_protocol(alice_id, bob_id, num_qubits, num_rounds) 
-        elif app_name == "TRY2_BQC":
-            alice_id, bob_id, num_qubits = args
-            return self.run_try2_protocol(alice_id, bob_id, num_qubits)
+            return self.bfk_protocol(alice_id, bob_id, num_qubits, num_rounds)
         else:
-            self.logger.log(f"Aplicação não realizada ou não encontrada.")
+            self.logger.log("Aplicação não realizada ou não encontrada.")
             return False
-        
+
     # PROTOCOLO E91 - QKD 
 
     def qkd_e91_protocol(self, alice_id, bob_id, num_bits):
@@ -230,7 +235,7 @@ class ApplicationLayer:
 
         # Verificar a memória do servidor após receber os qubits
         self.logger.log(f"Servidor tem {len(bob.memory)} qubits na memória após a recepção dos qubits do Cliente.")
-
+        
         # O servidor aplica as operações recebidas do cliente
         for qubit, operation in zip(qubits, operations_classical_message):
             self.apply_operation_from_message(qubit, operation)
@@ -352,6 +357,8 @@ class ApplicationLayer:
         # Cliente instrui o servidor a medir os qubits em cada rodada
         measurement_results = self.run_computation(client_id, server_id, num_rounds, qubits)
 
+        self._network.timeslot_total += num_rounds
+
         self.logger.log(f"Protocolo BFK concluído com sucesso. Resultados: {measurement_results}")
         return measurement_results
 
@@ -448,137 +455,175 @@ class ApplicationLayer:
             return theta + delta # Ajusta para cima se o resultado foi 1
         else:
             return theta - delta # Ajusta para baixo se o resultado foi 0
+        
+    
+    def record_route_fidelities(self, fidelities):
+        self.route_fidelities.extend(fidelities)
 
+    def avg_fidelity_on_applicationlayer(self):
+        if not self.route_fidelities:
+            print("Nenhuma fidelidade foi registrada.")
+            return 0.0
+
+        avg_fidelity = sum(self.route_fidelities) / len(self.route_fidelities)
+        print(f"A média das fidelidades das rotas é: {avg_fidelity:.4f}")
+        return avg_fidelity
+    
+    def print_route_fidelities(self):
+        """
+        Imprime a lista de fidelidades das rotas armazenadas.
+        """
+        if not self.route_fidelities:
+            print("Nenhuma fidelidade de rota foi registrada.")
+            return
+
+        print("Fidelidades das rotas utilizadas:")
+        for fidelity in self.route_fidelities:
+            print(f"{fidelity:.4f}")  # Exibe cada fidelidade com 4 casas decimais
+            
+    def record_used_eprs(self, epr_count):
+        """
+        Registra o número total de pares EPR usados durante a transmissão.
+        
+        Args:
+            epr_count (int): Total de pares EPR utilizados.
+        """
+        self.used_eprs += epr_count  # Incrementa o contador de EPRs usados
+
+    def print_used_eprs(self):
+        """Imprime o número total de pares EPR usados."""
+        print(f"Total de pares EPR utilizados: {self.used_eprs}")
+    
     # PROTOCOLO TRY2 - BQC
 
-    def run_try2_protocol(self, alice_id, bob_id, num_qubits):
-        """
-        Executa o protocolo Try2 completo: cliente prepara qubits, servidor realiza a tomografia.
+    # def run_try2_protocol(self, alice_id, bob_id, num_qubits):
+    #     """
+    #     Executa o protocolo Try2 completo: cliente prepara qubits, servidor realiza a tomografia.
         
-        Args:
-            alice_id (int): ID do cliente.
-            bob_id (int): ID do servidor.
-            num_qubits (int): Número de qubits preparados pelo cliente.
+    #     Args:
+    #         alice_id (int): ID do cliente.
+    #         bob_id (int): ID do servidor.
+    #         num_qubits (int): Número de qubits preparados pelo cliente.
             
-        Returns:
-            list: Resultados finais das medições realizadas pelo servidor.
-            dict: Estado original de cada qubit baseado no r_i.
-        """
-        self.logger.log(f"Iniciando protocolo Try2 com {num_qubits} qubits.")
+    #     Returns:
+    #         list: Resultados finais das medições realizadas pelo servidor.
+    #         dict: Estado original de cada qubit baseado no r_i.
+    #     """
+    #     self.logger.log(f"Iniciando protocolo Try2 com {num_qubits} qubits.")
         
-        self.used_qubits += num_qubits
+    #     self.used_qubits += num_qubits
         
-        # Cliente prepara os qubits e armazena os valores r_i
-        qubits = []
-        qubit_states = {}
+    #     # Cliente prepara os qubits e armazena os valores r_i
+    #     qubits = []
+    #     qubit_states = {}
         
-        for i in range(num_qubits):
-            r_i = random.choice([0, 1])  # O cliente gera um bit aleatório r_i
-            qubit = Qubit(qubit_id=random.randint(0, 1000))  # Cria um qubit com ID aleatório
-            if r_i == 1:
-                qubit.apply_x()  # Aplica a inversão de estado se r_i for 1
-            qubits.append(qubit)
-            qubit_states[qubit.qubit_id] = r_i  # O estado original do qubit é armazenado
+    #     for i in range(num_qubits):
+    #         r_i = random.choice([0, 1])  # O cliente gera um bit aleatório r_i
+    #         qubit = Qubit(qubit_id=random.randint(0, 1000))  # Cria um qubit com ID aleatório
+    #         if r_i == 1:
+    #             qubit.apply_x()  # Aplica a inversão de estado se r_i for 1
+    #         qubits.append(qubit)
+    #         qubit_states[qubit.qubit_id] = r_i  # O estado original do qubit é armazenado
             
-            self.logger.log(f"Qubit {qubit.qubit_id} preparado com r_i = {r_i} pelo cliente {alice_id}.")
+    #         self.logger.log(f"Qubit {qubit.qubit_id} preparado com r_i = {r_i} pelo cliente {alice_id}.")
         
-        # Adiciona os qubits criados à memória de Alice e registra os timeslots
-        alice = self._network.get_host(alice_id)
-        for qubit in qubits:
-            alice.memory.append(qubit)  # Adiciona o qubit à memória do cliente 
-            # Registra o timeslot de criação no dicionário self.qubit_timeslots
-            self._network.qubit_timeslots[qubit.qubit_id] = {
-                'timeslot': self._network.get_timeslot(),  # Usa o timeslot atual da rede
-                'fidelity': qubit.get_current_fidelity()
-            }
-            self.logger.log(f"Qubit {qubit.qubit_id} registrado com timeslot {self._network.get_timeslot()}.")
+    #     # Adiciona os qubits criados à memória de Alice e registra os timeslots
+    #     alice = self._network.get_host(alice_id)
+    #     for qubit in qubits:
+    #         alice.memory.append(qubit)  # Adiciona o qubit à memória do cliente 
+    #         # Registra o timeslot de criação no dicionário self.qubit_timeslots
+    #         self._network.qubit_timeslots[qubit.qubit_id] = {
+    #             'timeslot': self._network.get_timeslot(),  # Usa o timeslot atual da rede
+    #             'fidelity': qubit.get_current_fidelity()
+    #         }
+    #         self.logger.log(f"Qubit {qubit.qubit_id} registrado com timeslot {self._network.get_timeslot()}.")
 
-        self.logger.log(f"Alice agora tem {len(alice.memory)} qubits em sua memória.")
+    #     self.logger.log(f"Alice agora tem {len(alice.memory)} qubits em sua memória.")
         
-        # Verifica se o cliente tem qubits suficientes na memória
-        available_qubits = len(alice.memory)
+    #     # Verifica se o cliente tem qubits suficientes na memória
+    #     available_qubits = len(alice.memory)
 
-        if available_qubits < num_qubits:
-            self.logger.log(f'Erro: Alice tem {available_qubits} qubits, mas deveria ter {num_qubits} qubits. Abortando transmissão.')
-            return None, None
+    #     if available_qubits < num_qubits:
+    #         self.logger.log(f'Erro: Alice tem {available_qubits} qubits, mas deveria ter {num_qubits} qubits. Abortando transmissão.')
+    #         return None, None
 
-        # Transmite os qubits para o servidor
-        success = self._transport_layer.run_transport_layer(alice_id, bob_id, num_qubits)
-        if not success:
-            self.logger.log(f"Falha ao transmitir qubits do cliente {alice_id} para o servidor {bob_id}.")
-            return None, None
+    #     # Transmite os qubits para o servidor
+    #     success = self._transport_layer.run_transport_layer(alice_id, bob_id, num_qubits)
+    #     if not success:
+    #         self.logger.log(f"Falha ao transmitir qubits do cliente {alice_id} para o servidor {bob_id}.")
+    #         return None, None
         
-        # Servidor realiza a tomografia
-        tomography_results = []
-        for qubit in qubits:
-            # O servidor realiza a tomografia (neste caso, mede a probabilidade de cada qubit estar em |0> ou |1>)
-            p_0 = random.uniform(0, 1)  # Simulação da tomografia
-            p_1 = 1 - p_0
-            tomography_results.append((p_0, p_1))
+    #     # Servidor realiza a tomografia
+    #     tomography_results = []
+    #     for qubit in qubits:
+    #         # O servidor realiza a tomografia (neste caso, mede a probabilidade de cada qubit estar em |0> ou |1>)
+    #         p_0 = random.uniform(0, 1)  # Simulação da tomografia
+    #         p_1 = 1 - p_0
+    #         tomography_results.append((p_0, p_1))
         
-        self.logger.log(f"Protocolo Try2 concluído com sucesso. Resultados da tomografia: {tomography_results}")
+    #     self.logger.log(f"Protocolo Try2 concluído com sucesso. Resultados da tomografia: {tomography_results}")
         
-        # Cliente decodifica o estado original dos qubits com base em r_i
-        decoded_states = {}
-        for qubit, (p_0, p_1) in zip(qubits, tomography_results):
-            original_state = qubit_states[qubit.qubit_id]
-            if original_state == 0:
-                decoded_states[qubit.qubit_id] = '|0⟩'
-            else:
-                decoded_states[qubit.qubit_id] = '|1⟩'
+    #     # Cliente decodifica o estado original dos qubits com base em r_i
+    #     decoded_states = {}
+    #     for qubit, (p_0, p_1) in zip(qubits, tomography_results):
+    #         original_state = qubit_states[qubit.qubit_id]
+    #         if original_state == 0:
+    #             decoded_states[qubit.qubit_id] = '|0⟩'
+    #         else:
+    #             decoded_states[qubit.qubit_id] = '|1⟩'
         
-        self.logger.log(f"Estados originais dos qubits baseados em r_i: {decoded_states}")
+    #     self.logger.log(f"Estados originais dos qubits baseados em r_i: {decoded_states}")
         
-        return tomography_results, decoded_states
+    #     return tomography_results, decoded_states
 
 
-    def prepare_mixed_qubits(self, client_id, num_qubits):
-        """
-        O cliente prepara qubits mistos aplicando uma inversão condicional com base em bits aleatórios.
+    # def prepare_mixed_qubits(self, client_id, num_qubits):
+    #     """
+    #     O cliente prepara qubits mistos aplicando uma inversão condicional com base em bits aleatórios.
         
-        Args:
-            client_id (int): ID do cliente.
-            num_qubits (int): Número de qubits a serem preparados.
+    #     Args:
+    #         client_id (int): ID do cliente.
+    #         num_qubits (int): Número de qubits a serem preparados.
         
-        Returns:
-            list: Lista de qubits preparados.
-        """
-        client = self._network.get_host(client_id)
-        qubits = []
+    #     Returns:
+    #         list: Lista de qubits preparados.
+    #     """
+    #     client = self._network.get_host(client_id)
+    #     qubits = []
         
-        for i in range(num_qubits):
-            r_i = random.choice([0, 1])  # Gera um bit aleatório r_i
-            qubit = Qubit(qubit_id=random.randint(0, 1000))  # Cria um novo qubit
+    #     for i in range(num_qubits):
+    #         r_i = random.choice([0, 1])  # Gera um bit aleatório r_i
+    #         qubit = Qubit(qubit_id=random.randint(0, 1000))  # Cria um novo qubit
             
-            if r_i == 1:
-                qubit.apply_x()  # Aplica a porta X se r_i for 1 (inverte o estado do qubit)
+    #         if r_i == 1:
+    #             qubit.apply_x()  # Aplica a porta X se r_i for 1 (inverte o estado do qubit)
             
-            qubits.append(qubit)
-            self.logger.log(f"Qubit {qubit.qubit_id} preparado com r_i = {r_i} pelo cliente {client_id}.")
+    #         qubits.append(qubit)
+    #         self.logger.log(f"Qubit {qubit.qubit_id} preparado com r_i = {r_i} pelo cliente {client_id}.")
         
-        return qubits
+    #     return qubits
 
-    def perform_tomography(self, server_id, qubits):
-        """
-        O servidor realiza tomografia quântica nos qubits recebidos.
+    # def perform_tomography(self, server_id, qubits):
+    #     """
+    #     O servidor realiza tomografia quântica nos qubits recebidos.
         
-        Args:
-            server_id (int): ID do servidor.
-            qubits (list): Lista de qubits recebidos pelo servidor.
+    #     Args:
+    #         server_id (int): ID do servidor.
+    #         qubits (list): Lista de qubits recebidos pelo servidor.
         
-        Returns:
-            list: Resultados da tomografia (probabilidade de cada qubit estar em |0> ou |1>).
-        """
-        server = self._network.get_host(server_id)
-        results = []
+    #     Returns:
+    #         list: Resultados da tomografia (probabilidade de cada qubit estar em |0> ou |1>).
+    #     """
+    #     server = self._network.get_host(server_id)
+    #     results = []
         
-        for qubit in qubits:
-            # O servidor realiza uma estimativa tomográfica do estado do qubit
-            prob_0 = random.uniform(0, 1)  # Estima a probabilidade do qubit estar em |0>
-            prob_1 = 1 - prob_0  # Probabilidade de estar em |1>
-            results.append((prob_0, prob_1))  # Armazena as probabilidades
+    #     for qubit in qubits:
+    #         # O servidor realiza uma estimativa tomográfica do estado do qubit
+    #         prob_0 = random.uniform(0, 1)  # Estima a probabilidade do qubit estar em |0>
+    #         prob_1 = 1 - prob_0  # Probabilidade de estar em |1>
+    #         results.append((prob_0, prob_1))  # Armazena as probabilidades
         
-        return results  
+    #     return results  
 
 
 

@@ -1,11 +1,15 @@
 import networkx as nx
-from ..components import Network, Host
-
+from ..components import Network, Host, Logger  # Importações necessárias
+from qiskit import QuantumCircuit
+import random
+        #get profundidade (depht) do circuito
+        #numero de timeslots passadod= deplth
 class Controller():
-    def __init__(self, network):
+    def __init__(self,network):
         self.network = network
         self.hosts = None
         self.links = None
+        self.logger = Logger.get_instance()  # Obtém uma instância do logger para registrar eventos
 
     def create_routing_table(self, host_id: int) -> dict:
         """
@@ -67,3 +71,6 @@ class Controller():
 
         print(f"Alice {route[0]} e Bob {route[-1]} informados.")
 
+
+
+    

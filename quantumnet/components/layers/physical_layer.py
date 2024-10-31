@@ -69,14 +69,12 @@ class PhysicalLayer:
         self.logger.debug(f"Qubits usados na camada {self.__class__.__name__}: {self.used_qubits}")
         return self.used_qubits
     
-    def create_qubit(self, host_id: int, increment_timeslot: bool = True, increment_qubits : bool = True):
+    def create_qubit(self, host_id: int, increment_timeslot: bool = True, increment_qubits: bool = True, min_fidelity: float = 0.95):
         """Cria um qubit e adiciona à memória do host especificado.
 
         Args:
             host_id (int): ID do host onde o qubit será criado.
-
-        Raises:
-            Exception: Se o host especificado não existir na rede.
+            min_fidelity (float): Fidelidade mínima desejada para o qubit.
         """
         if increment_timeslot:
             self._network.timeslot()
@@ -89,13 +87,20 @@ class PhysicalLayer:
 
         qubit_id = self._count_qubit
         qubit = Qubit(qubit_id)
+
+        # Define a fidelidade inicial do qubit entre 0.95 e 1.0
+        initial_fidelity = uniform(min_fidelity, 1.0)
+        qubit.fidelity = initial_fidelity  # Atribuição direta da fidelidade inicial
+        qubit.current_fidelity = initial_fidelity  # Caso precise manter um histórico de fidelidade
+
         self._network.hosts[host_id].add_qubit(qubit)
         
         current_timeslot = self._network.get_timeslot()
         self._network.register_qubit_creation(qubit_id, current_timeslot)
-    
+
         self._count_qubit += 1
-        self.logger.debug(f'Qubit {qubit_id} criado com fidelidade inicial {qubit.get_initial_fidelity()} e adicionado à memória do Host {host_id}.')
+        self.logger.debug(f'Qubit {qubit_id} criado com fidelidade inicial {initial_fidelity} e adicionado à memória do Host {host_id}.')
+
 
     def create_epr_pair(self, fidelity: float = 1.0, increment_timeslot: bool = True, increment_eprs: bool = True):
         """Cria um par de qubits entrelaçados.

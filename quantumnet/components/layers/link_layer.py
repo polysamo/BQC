@@ -182,7 +182,62 @@ class LinkLayer:
             self._physical_layer.failed_eprs.remove(eprs_fail2)
             self.logger.log(f'Timeslot {self._network.get_timeslot()}: Purificação falhou no canal ({alice_id}, {bob_id}) devido a baixa probabilidade de sucesso da purificação.')
             return False
+    #PARA O BFK
+    def banded_purification(self, alice_id: int, bob_id: int, target_fidelity: float = 0.95, max_attempts: int = 10):
+        """
+        Realiza a purificação banded para manter a fidelidade dos pares EPRs acima de um valor alvo.
+
+        Args:
+            alice_id : int : ID do host Alice.
+            bob_id : int : ID do host Bob.
+            target_fidelity : float : Fidelidade mínima desejada após a purificação.
+            max_attempts : int : Número máximo de tentativas de purificação para evitar loop infinito.
         
+        Returns:
+            bool : True se a purificação foi bem-sucedida, False caso contrário.
+        """
+        self.logger.log(f"Começando a purificação banded entre {alice_id} e {bob_id} com alvo de fidelidade {target_fidelity}")
+
+        # Verificar se temos pelo menos dois EPRs para purificação
+        if len(self.created_eprs) < 2:
+            self.logger.log("Não há EPRs suficientes para a purificação banded.")
+            return False
+
+        attempt = 0
+
+        # Seleciona pares de EPRs dentro da faixa (banda) de fidelidade e aplica purificação iterativamente
+        while attempt < max_attempts:
+            # Verificar novamente se temos pares suficientes para continuar
+            if len(self.created_eprs) < 2:
+                self.logger.log("Purificação banded falhou por falta de pares suficientes.")
+                return False
+
+            # Seleciona os dois últimos EPRs para tentar a purificação
+            epr1 = self.created_eprs.pop()
+            epr2 = self.created_eprs.pop()
+
+            f1 = epr1.get_current_fidelity()
+            f2 = epr2.get_current_fidelity()
+
+            # Calcula a probabilidade de purificação e nova fidelidade
+            new_fidelity = self.purification_calculator(f1, f2, purification_type=1)
+
+            # Se a fidelidade atingir o alvo, cria o novo EPR e finaliza
+            if new_fidelity >= target_fidelity:
+                epr_purified = Epr((alice_id, bob_id), new_fidelity)
+                self._physical_layer.add_epr_to_channel(epr_purified, (alice_id, bob_id))
+                self.logger.log(f"Purificação banded bem-sucedida com fidelidade {new_fidelity}.")
+                return True
+            else:
+                # Se a fidelidade ainda não é suficiente, continua a purificação com o próximo par de EPRs
+                self.created_eprs.insert(0, Epr((alice_id, bob_id), new_fidelity))  # Coloca o EPR no início para evitar repetição no final
+                self.logger.log(f"Fidelidade após purificação banded: {new_fidelity}. Tentativa {attempt + 1} de {max_attempts}. Continuando o processo.")
+
+            attempt += 1
+
+        self.logger.log("Purificação banded falhou após o número máximo de tentativas.")
+        return False
+    
     def avg_fidelity_on_linklayer(self):
         """
         Calcula a fidelidade média dos EPRs criados na camada de enlace.
@@ -199,7 +254,6 @@ class LinkLayer:
         if total_eprs == 0:
             self.logger.log('Não há EPRs criados na camada de enlace.')
             return 0
-
 
         print(f'Total de EPRs criados na camada de enlace: {total_eprs}')
         print(f'Total de fidelidade dos EPRs criados na camada de enlace: {total_fidelity}')

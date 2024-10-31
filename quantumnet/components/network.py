@@ -1,4 +1,5 @@
 import networkx as nx
+from qiskit import QuantumCircuit
 from ..objects import Logger, Qubit
 from ..components import *
 from .layers import *
@@ -286,19 +287,6 @@ class Network():
         print("Hosts inicializados")
 
 
-    
-    # def start_hosts(self, num_qubits: int = 10):
-    #     """
-    #     Inicializa os hosts da rede.
-        
-    #     Args:
-    #         num_qubits (int): Número de qubits a serem inicializados.
-    #     """
-    #     for host_id in self._hosts:
-    #         for i in range(num_qubits):
-    #             self.physical.create_qubit(host_id, increment_timeslot=False,increment_qubits=False)
-    #     print("Hosts inicializados")    
-
     def start_channels(self):
         """
         Inicializa os canais da rede.
@@ -375,7 +363,8 @@ class Network():
         """
         total_eprs = (self._physical.get_used_eprs()+
                       self._link.get_used_eprs() +
-                      self._network.get_used_eprs()
+                      self._network.get_used_eprs() +
+                      self._application.get_used_eprs()
         )
         return total_eprs
     
@@ -446,7 +435,7 @@ class Network():
             else:
                 raise ValueError("Tipo de saída inválido. Escolha entre 'print', 'csv' ou 'variable'.")
 
-    def apply_decoherence_to_all_layers(self, decoherence_factor: float = 0.9):
+    def apply_decoherence_to_all_layers(self, decoherence_factor: float = 0.99):
         """
         Aplica decoerência a todos os qubits e EPRs nas camadas da rede que já avançaram nos timeslots.
         """
@@ -470,80 +459,155 @@ class Network():
                     epr.set_fidelity(new_fidelity)
 
 
-    # SIMULAÇÃO DA REDE 
+    # SIMULAÇÃO DA REDE
 
-    def choose_clients_and_server(self):
+    def generate_random_circuit(self, num_qubits=10, num_gates=30):
         """
-        Define o servidor como o nó 0 e seleciona 3 clientes aleatórios.
+        Gera um circuito quântico aleatório, armazena suas instruções e exibe o circuito.
+        
+        Args:
+            num_qubits (int): Número de qubits no circuito.
+            num_gates (int): Número de operações (portas) no circuito.
 
         Returns:
-            tuple: Lista de clientes e ID do servidor.
+            QuantumCircuit: O circuito quântico gerado.
         """
-        clients = random.sample(range(1, 9), 3)  # Supondo que temos 9 nós e o nó 0 é o servidor
-        server = 0
-        return clients, server
+        # Cria o circuito quântico
+        qc = QuantumCircuit(num_qubits)
 
-    def allocate_routes(self, clients, server):
+        # Define as portas quânticas possíveis
+        single_qubit_gates = ['h', 'x', 'y', 'z', 's', 't']
+        two_qubit_gates = ['cx', 'cz', 'swap']
+
+        # Aplica operações aleatórias
+        for _ in range(num_gates):
+            gate_type = random.choice(['single', 'two'])
+
+            if gate_type == 'single':
+                gate = random.choice(single_qubit_gates)
+                qubit = random.randint(0, num_qubits - 1)
+                getattr(qc, gate)(qubit)
+            elif gate_type == 'two':
+                gate = random.choice(two_qubit_gates)
+                qubit1 = random.randint(0, num_qubits - 1)
+                qubit2 = random.randint(0, num_qubits - 1)
+                while qubit1 == qubit2:
+                    qubit2 = random.randint(0, num_qubits - 1)
+
+                if gate == 'cx':
+                    qc.cx(qubit1, qubit2)
+                elif gate == 'cz':
+                    qc.cz(qubit1, qubit2)
+                elif gate == 'swap':
+                    qc.swap(qubit1, qubit2)
+
+        # Exibe o circuito no console
+        print(qc)
+
+        # Desenha e exibe o circuito graficamente
+        fig = qc.draw('mpl')
+        plt.show()
+
+        # Salva as instruções para log e debug
+        saved_instructions = self.save_circuit_instructions(qc)
+        self.logger.log(f"Circuito aleatório gerado com {num_qubits} qubits e {num_gates} portas.")
+        for instr in saved_instructions:
+            self.logger.log(f"Instrução: {instr}")
+
+        return qc, num_qubits
+
+    def save_circuit_instructions(self, circuit):
         """
-        Aloca rotas para cada cliente acessar o servidor.
+        Salva as instruções de um circuito quântico em uma lista de dicionários.
 
         Args:
-            clientes (list): Lista de clientes.
-            servidor (int): ID do servidor.
+            circuit (QuantumCircuit): O circuito quântico cujas instruções serão salvas.
 
         Returns:
-            dict: Dicionário de rotas alocadas para cada cliente.
+            list: Lista de instruções do circuito em formato de dicionário.
         """
-        rotas_alocadas = {}
-        for client in clients:
-            route = self.networklayer.short_route_valid(client, server)
-            if route:
-                self.logger.log(f"Rota alocada para o cliente {client} ao servidor {server}: {route}")
-                rotas_alocadas[client] = route
-            else:
-                self.logger.log(f"Falha ao alocar rota para o cliente {client}")
-        return rotas_alocadas
+        instructions = []
+        for instruction in circuit.data:
+            operation = instruction.operation.name
+            qubits = [qubit.index for qubit in instruction.qubits]
+            instructions.append({
+                'operation': operation,
+                'qubits': qubits,
+            })
+        return instructions
 
-    def execute_protocols(self, clients, server, rotas_alocadas):
-        """
-        Executa os protocolos designados para cada cliente utilizando as rotas alocadas.
+    # def choose_clients_and_server(self):
+    #     """
+    #     Define o servidor como o nó 0 e seleciona 3 clientes aleatórios.
 
-        Args:
-            clientes (list): Lista de IDs de clientes.
-            servidor (int): ID do servidor.
-            rotas_alocadas (dict): Dicionário de rotas alocadas.
-        """
-        applications = ["AC_BQC", "BFK_BQC", "TRY2_BQC"]
+    #     Returns:
+    #         tuple: Lista de clientes e ID do servidor.
+    #     """
+    #     clients = random.sample(range(1, 9), 3)  # Supondo que temos 9 nós e o nó 0 é o servidor
+    #     server = 0
+    #     return clients, server
+
+    # def allocate_routes(self, clients, server):
+    #     """
+    #     Aloca rotas para cada cliente acessar o servidor.
+
+    #     Args:
+    #         clientes (list): Lista de clientes.
+    #         servidor (int): ID do servidor.
+
+    #     Returns:
+    #         dict: Dicionário de rotas alocadas para cada cliente.
+    #     """
+    #     rotas_alocadas = {}
+    #     for client in clients:
+    #         route = self.networklayer.short_route_valid(client, server)
+    #         if route:
+    #             self.logger.log(f"Rota alocada para o cliente {client} ao servidor {server}: {route}")
+    #             rotas_alocadas[client] = route
+    #         else:
+    #             self.logger.log(f"Falha ao alocar rota para o cliente {client}")
+    #     return rotas_alocadas
+
+    # def execute_protocols(self, clients, server, rotas_alocadas):
+    #     """
+    #     Executa os protocolos designados para cada cliente utilizando as rotas alocadas.
+
+    #     Args:
+    #         clientes (list): Lista de IDs de clientes.
+    #         servidor (int): ID do servidor.
+    #         rotas_alocadas (dict): Dicionário de rotas alocadas.
+    #     """
+    #     applications = ["AC_BQC", "BFK_BQC"]
         
-        for client in clients:
-            # Escolhe uma aplicação aleatória para cada cliente
-            application = random.choice(applications)
-            num_qubits = random.randint(3, 7)  # Escolhe um número de qubits aleatório
+    #     for client in clients:
+    #         # Escolhe uma aplicação aleatória para cada cliente
+    #         application = random.choice(applications)
+    #         num_qubits = random.randint(3, 7)  # Escolhe um número de qubits aleatório
 
-            # Verifica se a aplicação é BFK_BQC, que precisa de um argumento adicional (número de rodadas)
-            if application == "BFK_BQC":
-                num_rounds = random.randint(1, 5)
-                comando = f'self.application_layer.run_app("{application}", {client}, {server}, {num_qubits}, {num_rounds})'
-            else:
-                comando = f'self.application_layer.run_app("{application}", {client}, {server}, {num_qubits})'
+    #         # Verifica se a aplicação é BFK_BQC, que precisa de um argumento adicional (número de rodadas)
+    #         if application == "BFK_BQC":
+    #             num_rounds = random.randint(1, 5)
+    #             comando = f'self.application_layer.run_app("{application}", {client}, {server}, {num_qubits}, {num_rounds})'
+    #         else:
+    #             comando = f'self.application_layer.run_app("{application}", {client}, {server}, {num_qubits})'
             
-            self.logger.log(f"Executando {application} para o cliente {client} no servidor {server} com rota {rotas_alocadas[client]} e {num_qubits} qubits.")
+    #         self.logger.log(f"Executando {application} para o cliente {client} no servidor {server} com rota {rotas_alocadas[client]} e {num_qubits} qubits.")
             
-            # Executa o comando da aplicação
-            exec(comando)  # Executa o protocolo
+    #         # Executa o comando da aplicação
+    #         exec(comando)  # Executa o protocolo
 
-            # Mantém o caminho ativo durante a execução
-            self.logger.log(f"Cliente {client} mantém a rota {rotas_alocadas[client]} durante a execução do protocolo.")
+    #         # Mantém o caminho ativo durante a execução
+    #         self.logger.log(f"Cliente {client} mantém a rota {rotas_alocadas[client]} durante a execução do protocolo.")
 
-    def simulation(self):
-        """
-        Função principal para simular o cenário com 1 servidor e 3 clientes acessando ao mesmo tempo.
-        """
-        # Selecionar clientes e servidor
-        clients, server = self.choose_clients_and_server()
+    # def simulation(self):
+    #     """
+    #     Função principal para simular o cenário com 1 servidor e 3 clientes acessando ao mesmo tempo.
+    #     """
+    #     # Selecionar clientes e servidor
+    #     clients, server = self.choose_clients_and_server()
 
-        # Alocar rotas para cada cliente
-        rotas_alocadas = self.allocate_routes(clients, server)
+    #     # Alocar rotas para cada cliente
+    #     rotas_alocadas = self.allocate_routes(clients, server)
         
-        # Executar protocolos para cada cliente com as rotas alocadas
-        self.execute_protocols(clients, server, rotas_alocadas)
+    #     # Executar protocolos para cada cliente com as rotas alocadas
+    #     self.execute_protocols(clients, server, rotas_alocadas)
