@@ -456,6 +456,7 @@ class ApplicationLayer:
         else:
             return theta - delta # Ajusta para baixo se o resultado foi 0
         
+    # MÉTRICAS 
     
     def record_route_fidelities(self, fidelities):
         self.route_fidelities.extend(fidelities)
@@ -490,9 +491,7 @@ class ApplicationLayer:
         """
         self.used_eprs += epr_count  # Incrementa o contador de EPRs usados
 
-    def print_used_eprs(self):
-        """Imprime o número total de pares EPR usados."""
-        print(f"Total de pares EPR utilizados: {self.used_eprs}")
+   
     
     # PROTOCOLO TRY2 - BQC
 
