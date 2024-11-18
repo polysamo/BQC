@@ -33,6 +33,7 @@ class Network():
         self.min_prob = 0.2
         self.timeslot_total = 0
         self.qubit_timeslots = {}  # Dicionário para armazenar qubits criados e seus timeslots
+        self.requests_queue = []   # Lista para armazenar requisições
 
     @property
     def hosts(self):
@@ -296,6 +297,7 @@ class Network():
             prob_replay_epr_create (float): Probabilidade de criar um EPR de replay.
         """
         for edge in self.edges:
+            self._graph.edges[edge]['busy_timeslots'] = set()  # Adiciona atributo de timeslots ocupados
             self._graph.edges[edge]['prob_on_demand_epr_create'] = random.uniform(self.min_prob, self.max_prob)
             self._graph.edges[edge]['prob_replay_epr_create'] = random.uniform(self.min_prob, self.max_prob)
             self._graph.edges[edge]['eprs'] = list()
@@ -458,6 +460,54 @@ class Network():
                     new_fidelity = current_fidelity * decoherence_factor
                     epr.set_fidelity(new_fidelity)
 
+    def is_link_busy(self, node, timeslot):
+        """
+        Verifica se algum link conectado a um nó está ocupado no timeslot especificado.
+
+        Args:
+            node (int): O nó sendo verificado.
+            timeslot (int): O timeslot a ser verificado.
+
+        Returns:
+            bool: True se algum link está ocupado, False caso contrário.
+        """
+        for neighbor in self._graph.neighbors(node):
+            edge_data = self._graph.get_edge_data(node, neighbor)
+            if 'busy_timeslots' in edge_data and timeslot in edge_data['busy_timeslots']:
+                return True  # Retorna True se qualquer link do nó estiver ocupado
+        return False
+    
+    
+    def reserve_link(self, node, timeslot):
+        """
+        Reserva um link ocupando-o no timeslot especificado.
+        
+        Args:
+            node (int): O nó atual sendo reservado.
+            timeslot (int): O timeslot a ser reservado.
+        """
+        for neighbor in self._graph.neighbors(node):
+            edge_data = self._graph.get_edge_data(node, neighbor)
+            if 'busy_timeslots' not in edge_data:
+                edge_data['busy_timeslots'] = set()
+            edge_data['busy_timeslots'].add(timeslot)
+    
+    # def reserve_link(self, node, timeslot):
+    #     """
+    #     Reserva um link ocupando-o no timeslot especificado.
+        
+    #     Args:
+    #         node (int): O nó atual sendo reservado.
+    #         timeslot (int): O timeslot a ser reservado.
+    #     """
+    #     for neighbor in self._graph.neighbors(node):
+    #         # Adiciona o timeslot ao atributo de ocupação da aresta
+    #         edge_data = self._graph.get_edge_data(node, neighbor)
+    #         if 'busy_timeslots' not in edge_data:
+    #             edge_data['busy_timeslots'] = set()
+    #         edge_data['busy_timeslots'].add(timeslot)
+
+
 
     # SIMULAÇÃO DA REDE
 
@@ -535,7 +585,186 @@ class Network():
                 'qubits': qubits,
             })
         return instructions
+    
+    # def generate_request(self, alice_id, bob_id, num_qubits, num_gates):
+    #     """
+    #     Gera uma requisição de circuito aleatório e a armazena na lista de requisições.
 
+    #     Args:
+    #         alice_id (int): ID do cliente (Alice).
+    #         bob_id (int): ID do servidor (Bob).
+    #         num_qubits (int): Número de qubits no circuito.
+    #         num_gates (int): Número de operações (portas) no circuito.
+    #     """
+    #     # Gera o circuito aleatório
+    #     circuit, generated_num_qubits = self.generate_random_circuit(num_qubits=num_qubits, num_gates=num_gates)
+
+    #     # Escolhe um protocolo aleatoriamente
+    #     protocols = ["AC_BQC", "BFK_BQC"]  # Protocolos disponíveis
+    #     protocol = random.choice(protocols)
+
+    #     # Cria a requisição com o circuito e protocolo
+    #     request = {
+    #         'alice_id': alice_id,
+    #         'bob_id': bob_id,
+    #         'num_qubits': generated_num_qubits,
+    #         'circuit': circuit,
+    #         'protocol': protocol,  # Inclui o protocolo
+    #     }
+
+    #     # Adiciona a requisição à fila
+    #     self.requests_queue.append(request)
+    #     print(f"Requisição adicionada: Alice {alice_id} -> Bob {bob_id} com protocolo {protocol}.")
+        
+    #     return request
+
+    def generate_request(self, alice_id, bob_id, num_qubits, num_gates):
+        """
+        Gera uma requisição de circuito aleatório e a armazena na lista de requisições.
+
+        Args:
+            alice_id (int): ID do cliente (Alice).
+            bob_id (int): ID do servidor (Bob).
+            num_qubits (int): Número de qubits no circuito.
+            num_gates (int): Número de operações (portas) no circuito.
+        """
+        # Gera o circuito aleatório
+        quantum_circuit, generated_num_qubits = self.generate_random_circuit(num_qubits=num_qubits, num_gates=num_gates)
+
+        # Escolhe um protocolo aleatoriamente
+        protocols = ["AC_BQC", "BFK_BQC"]  # Protocolos disponíveis
+        protocol = random.choice(protocols)
+
+        # Cria a requisição com o circuito e protocolo
+        request = {
+            'alice_id': alice_id,
+            'bob_id': bob_id,
+            'num_qubits': generated_num_qubits,
+            'quantum_circuit': quantum_circuit,  # O circuito é armazenado aqui
+            'protocol': protocol,  # O nome do protocolo é armazenado aqui
+        }
+
+        # Adiciona a requisição à fila
+        self.requests_queue.append(request)
+        self.logger.log(f"Requisição adicionada: Alice {alice_id} -> Bob {bob_id} com protocolo {protocol}.")
+        
+        return request
+
+
+    def send_requests_to_controller(self, controller):
+        """
+        Envia todas as requisições para o controlador e esvazia a fila de requisições.
+        
+        Args:
+            controller (Controller): O controlador responsável por agendar as requisições.
+        """
+        if hasattr(controller, 'schedule_requests'):
+            controller.schedule_requests(self.requests_queue)  # Passa a fila de requisições
+            self.requests_queue.clear()  # Esvazia a fila após envio
+            print("Todas as requisições foram enviadas para o controlador.")
+        else:
+            raise AttributeError("O controlador fornecido não possui o método 'schedule_requests'.")
+        
+    def execute_scheduled_requests(self, scheduled_requests):
+        """
+        Recebe e executa as requisições agendadas pelo controlador na rede.
+        
+        Args:
+            scheduled_requests (dict): Dicionário de requisições agendadas por timeslot.
+        """
+        for timeslot, requests in scheduled_requests.items():
+            self.logger.log(f"Executando requisições do timeslot {timeslot}.")
+            
+            # Avança para o timeslot correspondente
+            while self.get_timeslot() < timeslot:
+                self.timeslot()  # Incrementa o timeslot da rede
+                self.logger.log(f"Timeslot avançado para {self.get_timeslot()}.")
+
+            for request in requests:
+                self.execute_request(request)
+
+            # Registra métricas após o timeslot
+            self.register_execution_metrics()
+            self.logger.log(f"Requisições do timeslot {timeslot} concluídas.")
+
+    def execute_request(self, request):
+        """
+        Executa uma requisição, enviando os detalhes para a camada de aplicação da rede.
+        
+        Args:
+            request (dict): Requisição contendo informações como Alice, Bob, circuito e qubits.
+        """
+        alice_id = request['alice_id']
+        bob_id = request['bob_id']
+        num_qubits = request['num_qubits']
+        protocol = request['protocol']
+        quantum_circuit = request['quantum_circuit']  # O circuito real é usado aqui
+        num_rounds = request.get('num_rounds', 10)  # Valor padrão de 10 rounds se não especificado
+
+        self.logger.log(f"Executando requisição: Alice {alice_id} -> Bob {bob_id}, Protocolo: {protocol}")
+
+        if protocol == "AC_BQC":
+            self.application_layer.run_app("AC_BQC", alice_id=alice_id, bob_id=bob_id, num_qubits=num_qubits, circuit=quantum_circuit)
+        elif protocol == "BFK_BQC":
+            self.application_layer.run_app("BFK_BQC", alice_id=alice_id, bob_id=bob_id, num_qubits=num_qubits, num_rounds=num_rounds, circuit=quantum_circuit)
+        else:
+            self.logger.log(f"Protocolo '{protocol}' não reconhecido.")
+
+
+
+
+
+    # def generate_request(self, alice_id, bob_id, num_qubits, num_gates):
+    #     """
+    #     Gera uma requisição de circuito aleatório e a armazena na lista de requisições.
+        
+    #     Args:
+    #         alice_id (int): ID do cliente (Alice).
+    #         bob_id (int): ID do servidor (Bob).
+    #         num_qubits (int): Número de qubits no circuito.
+    #         num_gates (int): Número de operações (portas) no circuito.
+    #     """
+    #     # Gerar o circuito aleatório
+    #     circuit, generated_num_qubits = self.generate_random_circuit(num_qubits=num_qubits, num_gates=num_gates)
+        
+    #     # Criar a requisição com os parâmetros e o circuito gerado
+    #     request = {
+    #         'alice_id': alice_id,
+    #         'bob_id': bob_id,
+    #         'num_qubits': generated_num_qubits,
+    #         'circuit': circuit
+    #     }
+
+    #     # Adicionar a requisição à fila de requisições
+    #     self.requests_queue.append(request)
+    #     print(f"Requisição adicionada para Alice {alice_id} -> Bob {bob_id} com {generated_num_qubits} qubits.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
     # def choose_clients_and_server(self):
     #     """
     #     Define o servidor como o nó 0 e seleciona 3 clientes aleatórios.

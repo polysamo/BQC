@@ -223,7 +223,7 @@ class TransportLayer:
         """
         return self.transmitted_qubits
     
-    def run_transport_layer(self, alice_id: int, bob_id: int, num_qubits: int):
+    def run_transport_layer(self, alice_id: int, bob_id: int, num_qubits: int, route=None):
         """
         Executa a requisição de transmissão e o protocolo de teletransporte.
 
@@ -259,10 +259,15 @@ class TransportLayer:
 
         while attempts < max_attempts and success_count < num_qubits:
             for _ in range(num_qubits - success_count):
-                route = self._network_layer.short_route_valid(alice_id, bob_id)
+                # Usa a rota fornecida ou calcula uma nova rota, se necessário
                 if route is None:
-                    self.logger.log(f'Não foi possível encontrar uma rota válida na tentativa {attempts + 1}.')
-                    break
+                    route = self._network_layer.short_route_valid(alice_id, bob_id)
+                    if route is None:
+                        self.logger.log(f'Não foi possível encontrar uma rota válida na tentativa {attempts + 1}.')
+                        break
+                else:
+                    self.logger.log(f"Usando a rota fornecida: {route}")
+
 
                 # Verifica a fidelidade dos pares EPR ao longo da rota
                 fidelities = []
@@ -279,12 +284,24 @@ class TransportLayer:
                     else:
                         self.logger.log(f'Não foi possível encontrar pares EPR suficientes na rota {route[i]} -> {route[i + 1]}.')
                         break
-
+            
                 if not fidelities:
                     attempts += 1
                     continue
 
                 f_route = sum(fidelities) / len(fidelities)
+
+                # Verifica se a fidelidade final da rota atende ao critério (≥ 0.95)
+                # if fidelities:
+                #     f_route = sum(fidelities) / len(fidelities)
+                #     if f_route < 0.95:
+                #         self.logger.log(f"Rota {route} descartada. Fidelidade final ({f_route:.2f}) não atende ao critério mínimo de 0.95.")
+                #         route = None  # Calcula nova rota na próxima iteração
+                #         continue
+                # else:
+                #     attempts += 1
+                #     continue
+
 
                 if alice.memory:
                     qubit_alice = alice.memory.pop(0)
@@ -328,114 +345,4 @@ class TransportLayer:
             return False
 
 
-
-    # def run_transport_layer(self, alice_id: int, bob_id: int, num_qubits: int):
-    #     """
-    #     Executa a requisição de transmissão e o protocolo de teletransporte.
-
-    #     args:
-    #         alice_id : int : Id do host Alice.
-    #         bob_id : int : Id do host Bob.
-    #         num_qubits : int : Número de qubits a serem transmitidos.
-
-    #     returns:
-    #         bool : True se a operação foi bem-sucedida, False caso contrário.
-    #     """
-    #     alice = self._network.get_host(alice_id)
-    #     bob = self._network.get_host(bob_id)
-    #     available_qubits = len(alice.memory)
-
-    #     # Se Alice tiver menos qubits do que o necessário, crie mais qubits.
-    #     if available_qubits < num_qubits:
-    #         qubits_needed = num_qubits - available_qubits
-    #         self.logger.log(f'Número insuficiente de qubits na memória de Alice (Host {alice_id}). Criando mais {qubits_needed} qubits para completar os {num_qubits} necessários.')
-
-    #         for _ in range(qubits_needed):
-    #             self._network.timeslot()
-    #             self._physical_layer.create_qubit(alice_id)
-
-    #         available_qubits = len(alice.memory)
-
-    #     if available_qubits != num_qubits:
-    #         self.logger.log(f'Erro: Alice tem {available_qubits} qubits, mas deveria ter {num_qubits} qubits. Abortando transmissão.')
-    #         return False
-
-    #     max_attempts = 2
-    #     attempts = 0
-    #     success_count = 0
-    #     route_fidelities = []  # Armazena fidelidades finais das rotas
-    #     used_eprs = 0 
-
-    #     while attempts < max_attempts and success_count < num_qubits:
-    #         self.logger.log(f'Tentativa {attempts + 1} de transmissão de qubits entre {alice_id} e {bob_id}.')
-
-    #         for _ in range(num_qubits - success_count):
-    #             route = self._network_layer.short_route_valid(alice_id, bob_id)
-    #             if route is None:
-    #                 self.logger.log(f'Não foi possível encontrar uma rota válida na tentativa {attempts + 1}. Timeslot: {self._network.get_timeslot()}')
-    #                 break
-
-    #             # Verifica a fidelidade dos pares EPR ao longo da rota
-    #             fidelities = []
-    #             for i in range(len(route) - 1):
-    #                 node1 = route[i]
-    #                 node2 = route[i + 1]
-
-    #                 epr_pairs = self._network.get_eprs_from_edge(node1, node2)
-    #                 if not epr_pairs:
-    #                     self.logger.log(f'Não foi possível encontrar pares EPR suficientes na rota {route[i]} -> {route[i + 1]}.')
-    #                     break
-    #                 fidelities.extend([epr.get_current_fidelity() for epr in epr_pairs])
-    #                 used_eprs += 1
-
-    #             if not fidelities:
-    #                 attempts += 1
-    #                 continue
-
-    #             f_route = sum(fidelities) / len(fidelities)
-
-    #             if alice.memory:
-    #                 qubit_alice = alice.memory.pop(0)
-    #                 f_alice = qubit_alice.get_current_fidelity()
-    #                 F_final = f_alice * f_route
-    #                 route_fidelities.append(F_final)  # Adiciona a fidelidade final da rota à lista
-
-    #                 qubit_alice.fidelity = F_final
-    #                 bob.memory.append(qubit_alice)
-
-    #                 success_count += 1
-    #                 self.used_qubits += 1
-    #                 self.logger.log(f'Teletransporte de qubit de {alice_id} para {bob_id} na rota {route} foi bem-sucedido com fidelidade final de {F_final}.')
-
-    #                 self.transmitted_qubits.append({
-    #                     'alice_id': alice_id,
-    #                     'bob_id': bob_id,
-    #                     'route': route,
-    #                     'fidelity_alice': f_alice,
-    #                     'fidelity_route': f_route,
-    #                     'F_final': F_final,
-    #                     'timeslot': self._network.get_timeslot(),
-    #                     'qubit': qubit_alice
-    #                 })
-    #             else:
-    #                 self.logger.log(f'Alice não possui qubits suficientes para continuar a transmissão.')
-    #                 break
-
-    #         attempts += 1
-
-    #     # Passa a lista de fidelidades finais para a camada de aplicação
-    #     self._network.application_layer.record_route_fidelities(route_fidelities)
-    #     self._network.application_layer.record_used_eprs(used_eprs)  # Envia a contagem de EPRs
-
-    #     if success_count == num_qubits:
-    #         self.logger.log(f'Transmissão e teletransporte de {num_qubits} qubits entre {alice_id} e {bob_id} concluídos com sucesso. Timeslot: {self._network.get_timeslot()}')
-    #         return True
-    #     else:
-    #         self.logger.log(f'Falha na transmissão de {num_qubits} qubits entre {alice_id} e {bob_id}. Apenas {success_count} qubits foram transmitidos com sucesso. Timeslot: {self._network.get_timeslot()}')
-    #         return False
-
-
- 
-
-   
    

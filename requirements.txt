@@ -138,7 +138,7 @@ PyJWT==2.8.0
 pylatexenc==2.10
 pyparsing==3.1.1
 PySimpleSOAP==1.16.2
-pysmbc==1.0.23
+pysmbc==1.0.23    
 pyspnego==0.10.2
 python-apt==2.2.1
 python-constraint==1.4.0
