@@ -243,8 +243,8 @@ class TransportLayer:
         if available_qubits < num_qubits:
             qubits_needed = num_qubits - available_qubits
             for _ in range(qubits_needed):
-                self._network.timeslot()
-                self._physical_layer.create_qubit(alice_id)
+                # self._network.timeslot()
+                self._physical_layer.create_qubit(alice_id, increment_timeslot = False)
             available_qubits = len(alice.memory)
 
         if available_qubits != num_qubits:
@@ -290,22 +290,12 @@ class TransportLayer:
                     continue
 
                 f_route = sum(fidelities) / len(fidelities)
-
-                # Verifica se a fidelidade final da rota atende ao critério (≥ 0.95)
-                # if fidelities:
-                #     f_route = sum(fidelities) / len(fidelities)
-                #     if f_route < 0.95:
-                #         self.logger.log(f"Rota {route} descartada. Fidelidade final ({f_route:.2f}) não atende ao critério mínimo de 0.95.")
-                #         route = None  # Calcula nova rota na próxima iteração
-                #         continue
-                # else:
-                #     attempts += 1
-                #     continue
-
-
+                
                 if alice.memory:
+                    self._network.timeslot()
                     qubit_alice = alice.memory.pop(0)
                     f_alice = qubit_alice.get_current_fidelity()
+                    
                     F_final = f_alice * f_route
                     route_fidelities.append(F_final)  # Adiciona a fidelidade final da rota à lista
 
@@ -315,7 +305,7 @@ class TransportLayer:
                     success_count += 1
                     self.used_qubits += 1
                     used_eprs += eprs_used_in_current_transmission  # Conta EPRs usados apenas em transmissões bem-sucedidas
-                    self.logger.log(f'Teletransporte de qubit de {alice_id} para {bob_id} na rota {route} foi bem-sucedido com fidelidade final de {F_final}.')
+                    self.logger.log(f'Timeslot {self._network.get_timeslot()}: Teletransporte de qubit de {alice_id} para {bob_id} na rota {route} foi bem-sucedido com fidelidade final de {F_final}.')
 
                     self.transmitted_qubits.append({
                         'alice_id': alice_id,
@@ -343,6 +333,5 @@ class TransportLayer:
         else:
             self.logger.log(f'Falha na transmissão de {num_qubits} qubits entre {alice_id} e {bob_id}. Apenas {success_count} qubits foram transmitidos com sucesso.')
             return False
-
 
    

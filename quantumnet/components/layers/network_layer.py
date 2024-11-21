@@ -21,6 +21,7 @@ class NetworkLayer:
         self.used_eprs = 0  # Inicializa o contador de EPRs utilizados
         self.used_qubits = 0  # Inicializa o contador de Qubits utilizados
         self.routes_used = {}  # Inicializa o dicionário de rotas usadas 
+        
     def __str__(self):
         """ Retorna a representação em string da camada de rede. 
         

@@ -6,7 +6,7 @@ class Qubit():
         self.qubit_id = qubit_id
         self._qubit_state = 0  # Define o estado inicial do qubit como 0
         self._phase = 1  # 1 para estado normal, -1 para estado com fase invertida (representa o efeito de Z)
-        self._initial_fidelity = initial_fidelity if initial_fidelity is not None else random.uniform(0, 1)
+        self._initial_fidelity = initial_fidelity if initial_fidelity is not None else random.uniform(0.9, 1)
         self._current_fidelity = self._initial_fidelity
 
     def __str__(self):

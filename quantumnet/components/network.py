@@ -316,7 +316,6 @@ class Network():
                 self._graph.edges[edge]['eprs'].append(epr)
                 self.logger.debug(f'Par EPR {epr} adicionado ao canal.')
         print("Pares EPRs adicionados")
-
         
     def timeslot(self):
         """
