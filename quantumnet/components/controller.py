@@ -18,8 +18,6 @@ class Controller():
         self.occupied_routes = {}  # Rastreia rotas ocupadas por timeslot
         self.scheduled_requests_slice = defaultdict(list)
         self.slices = {}
-        # self.final_slice_1_paths = []
-        # self.final_slice_2_paths = []
 
     def initialize_slices(self, network, clients, server, protocols, slice_1_paths, slice_2_paths):
         """
@@ -307,27 +305,6 @@ class Controller():
 
         self.logger.log(f"Requisições agendadas em timeslots: {scheduled_timeslots}")
         return scheduled_timeslots
-
-    # def map_requests_to_slices(self, requests):
-    #     """
-    #     Mapeia as requisições para slices com base no protocolo.
-
-    #     Args:
-    #         requests (list): Lista de requisições.
-
-    #     Returns:
-    #         dict: Requisições separadas por slices.
-    #     """
-    #     slice_requests = {}
-
-    #     for request in requests:
-    #         protocol = request.get('protocol')
-    #         slice_id = f"slice_{protocols.index(protocol) + 1}"  # Identifica o slice correto
-    #         if slice_id not in slice_requests:
-    #             slice_requests[slice_id] = []
-    #         slice_requests[slice_id].append(request)
-
-    #     return slice_requests
 
     def map_requests_to_slices(self, requests):
         """
