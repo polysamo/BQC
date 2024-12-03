@@ -34,7 +34,8 @@ class Network():
         self.timeslot_total = 0
         self.qubit_timeslots = {}  # Dicionário para armazenar qubits criados e seus timeslots
         self.requests_queue = []   # Lista para armazenar requisições
-
+        self.final_slice_1_paths = None  
+        self.final_slice_2_paths = None  
     @property
     def hosts(self):
         """
@@ -208,8 +209,188 @@ class Network():
             return epr
         except IndexError:
             raise Exception('Não há Pares EPRs.')   
+
+    def set_topology_for_slices(self, graph_type: str, dimensions: tuple, clients: list, server: int):
+        """
+        Configura a topologia da rede especificamente para a simulação de slices.
         
-    def set_ready_topology(self, topology_name: str, num_clients: int, *args: int) -> None:
+        Args:
+            graph_type (str): Tipo do grafo. Pode ser 'grade', 'linha' ou 'anel'.
+            dimensions (tuple): Dimensões da topologia. Por exemplo, (4, 4) para uma grade 4x4.
+            clients (list): IDs dos nós que serão configurados como clientes.
+            server (int): ID do nó que será configurado como servidor.
+        """
+        # 1. Criar a topologia
+        if graph_type == 'grade':
+            if len(dimensions) != 2:
+                raise ValueError("Para topologia 'grade', são necessárias duas dimensões.")
+            self._graph = nx.grid_2d_graph(*dimensions)
+        elif graph_type == 'linha':
+            if len(dimensions) != 1:
+                raise ValueError("Para topologia 'linha', é necessário um único valor de dimensão.")
+            self._graph = nx.path_graph(dimensions[0])
+        elif graph_type == 'anel':
+            if len(dimensions) != 1:
+                raise ValueError("Para topologia 'anel', é necessário um único valor de dimensão.")
+            self._graph = nx.cycle_graph(dimensions[0])
+        else:
+            raise ValueError(f"Tipo de grafo '{graph_type}' não suportado.")
+
+        self._graph = nx.convert_node_labels_to_integers(self._graph)  # Converte rótulos dos nós para inteiros
+        total_nodes = len(self._graph.nodes)
+
+        # 2. Validar os IDs de clientes e servidor
+        if server >= total_nodes or any(client >= total_nodes for client in clients):
+            raise ValueError("IDs de clientes ou servidor estão fora do intervalo de nós disponíveis na topologia.")
+
+        # 3. Configurar pesos nas arestas
+        for edge in self._graph.edges:
+            self._graph.edges[edge]['weight'] = 1
+
+        # 4. Inicializar os nós como ServerNode, ClientNode ou RegularNode
+        self._hosts = {}
+        self.node_colors = []
+
+        for node in self._graph.nodes:
+            if node == server:
+                self._hosts[node] = ServerNode(node)
+                self.node_colors.append('green')  # Servidor
+            elif node in clients:
+                self._hosts[node] = ClientNode(node)
+                self.node_colors.append('red')  # Clientes
+            else:
+                self._hosts[node] = RegularNode(node)
+                self.node_colors.append('#1f78b8')  # Nós regulares
+
+        # 5. Inicializar canais e EPRs
+        self.start_hosts()
+        self.start_channels()
+        self.start_eprs()
+
+        # 6. Log e confirmação
+        self.logger.log(f"Topologia configurada: {graph_type} ({dimensions}) com {len(clients)} clientes e 1 servidor.")
+        print("Topologia configurada com sucesso para slices!")
+
+    def calculate_paths(self, clients, server):
+        """
+        Calcula os caminhos para dois slices, garantindo mínimo overlap e compartilhamento de caminhos.
+        
+        Args:
+            clients (list): IDs dos nós clientes.
+            server (int): ID do nó servidor.
+
+        Returns:
+            tuple: Duas listas de caminhos para os slices (slice_1_paths, slice_2_paths).
+        """
+        slice_1_paths = []  
+        slice_2_paths = []  
+        
+        edge_weights = nx.get_edge_attributes(self._graph, 'weight')
+
+        # Para o Slice 1, calcular os caminhos para os clientes
+        for client in clients:
+            # Caminho mais curto do cliente para o servidor
+            path_1 = nx.shortest_path(self._graph, source=client, target=server, weight='weight')
+            slice_1_paths.append(path_1)
+            
+            # Atualiza os pesos das arestas para dar preferência ao Slice 1
+            for i in range(len(path_1) - 1):
+                edge = (path_1[i], path_1[i + 1])
+                edge_weights[edge] = edge_weights.get(edge, 1) + 10
+                reverse_edge = (edge[1], edge[0])
+                if reverse_edge in edge_weights:
+                    edge_weights[reverse_edge] += 10
+
+        # Atualiza os pesos no grafo após o cálculo do Slice 1
+        nx.set_edge_attributes(self._graph, edge_weights, 'weight')
+
+        # Para o Slice 2, calcular os caminhos para os clientes
+        for client in clients:
+            # Caminho mais curto do cliente para o servidor
+            path_2 = nx.shortest_path(self._graph, source=client, target=server, weight='weight')
+            slice_2_paths.append(path_2)
+            
+            # Penaliza as arestas que são comuns com o Slice 1
+            for i in range(len(path_2) - 1):
+                edge = (path_2[i], path_2[i + 1])
+                edge_weights[edge] = edge_weights.get(edge, 1) + 10
+                reverse_edge = (edge[1], edge[0])
+                if reverse_edge in edge_weights:
+                    edge_weights[reverse_edge] += 10
+
+        final_slice_1_paths = [slice_1_paths[0]]  
+        final_slice_2_paths = [slice_2_paths[1]] 
+
+        return final_slice_1_paths, final_slice_2_paths
+
+    
+
+    def visualize_slices(self, clients, server, slice_1_paths, slice_2_paths):
+        """
+        Visualiza o grafo com os caminhos para ambos os slices distinguidos por cor.
+
+        Args:
+            clients (list): IDs dos nós clientes.
+            server (int): ID do nó servidor.
+            slice_1_paths (list): Lista de caminhos para o primeiro slice.
+            slice_2_paths (list): Lista de caminhos para o segundo slice.
+        """
+        pos = nx.spring_layout(self._graph)  # Generate positions for the nodes
+        plt.figure(figsize=(10, 10))
+
+        # Draw the base graph
+        nx.draw(self._graph, pos, with_labels=True, node_size=500, node_color="lightgray", edge_color="gray")
+
+        # Highlight the server and client nodes
+        nx.draw_networkx_nodes(self._graph, pos, nodelist=[server], node_color="red", label="Server")
+        nx.draw_networkx_nodes(self._graph, pos, nodelist=clients, node_color="blue", label="Clients")
+
+        # Draw Slice 1 paths
+        for path in slice_1_paths:
+            edges = [(path[i], path[i + 1]) for i in range(len(path) - 1)]
+            nx.draw_networkx_edges(self._graph, pos, edgelist=edges, edge_color="green", width=2, label="Slice 1")
+
+        # Draw Slice 2 paths
+        for path in slice_2_paths:
+            edges = [(path[i], path[i + 1]) for i in range(len(path) - 1)]
+            nx.draw_networkx_edges(self._graph, pos, edgelist=edges, edge_color="purple", width=3, label="Slice 2")
+
+        plt.title("Paths for Both Slices")
+        plt.legend(["Server", "Clients", "Slice 1", "Slice 2"])
+        plt.show()
+
+    def run_slice_simulation(self, clients, server):
+        """
+        Roda a simulação de slices para a topologia configurada.
+
+        Args:
+            clients (list): IDs dos nós clientes.
+            server (int): ID do nó servidor.
+        """
+        # Configura pesos padrão
+        for edge in self._graph.edges:
+            self._graph.edges[edge]['weight'] = 1  # Configura pesos padrão
+
+        # Calcula os caminhos para os slices
+        slice_1, slice_2 = self.calculate_paths(clients, server)
+
+        # Armazena as rotas como atributos da rede
+        self.final_slice_1_paths = slice_1
+        self.final_slice_2_paths = slice_2
+
+        print("Final Slice 1 Paths:", self.final_slice_1_paths)
+        print("Final Slice 2 Paths:", self.final_slice_2_paths)
+
+        # # Print the paths after the simulation
+        # print("Final Slice 1 Paths:", slice_1)
+        # print("Final Slice 2 Paths:", slice_2)
+
+        # Visualiza os slices
+        self.visualize_slices(clients, server, slice_1, slice_2)
+
+        self.logger.log(f"Simulação de slices concluída para {len(clients)} clientes e servidor {server}.")
+        
+    def set_ready_topology(self, topology_name: str, num_clients: int, *args: int, clients=None, server=None) -> None:
         """
         Cria um grafo com uma topologia pronta e inicializa os nós como servidor, clientes e normais.
 
@@ -217,6 +398,8 @@ class Network():
             topology_name (str): Nome da topologia.
             num_clients (int): Número de nós que serão clientes.
             *args (int): Argumentos para a topologia, geralmente o número de nós totais.
+            clients (list, optional): Lista de nós que devem ser clientes.
+            server (int, optional): Nó que será o servidor.
         """
         # Converter o nome da topologia para minúsculas para aceitar qualquer variação de letras
         topology_name = topology_name.lower()
@@ -241,25 +424,36 @@ class Network():
         total_nodes = len(self._graph.nodes())
         self.node_colors = []  # Armazena as cores dos nós
 
-        # Inicializa o primeiro nó como servidor (cor verde)
-        self._hosts[0] = ServerNode(0)
-        self.node_colors.append('green')
+        # Inicializa o nó servidor
+        if server is not None:
+            self._hosts[server] = ServerNode(server)
+            self.node_colors.append('green')
+        else:
+            self._hosts[0] = ServerNode(0)
+            self.node_colors.append('green')
 
-        # Inicializa os próximos nós como clientes (cor vermelha)
-        for node in range(1, num_clients + 1):
-            self._hosts[node] = ClientNode(node)
-            self.node_colors.append('red')
+        for edge in self._graph.edges:
+            self._graph.edges[edge]['weight'] = 1  # Configura o peso padrão
 
-        # Inicializa os nós restantes como regulares (cor azul)
-        for node in range(num_clients + 1, total_nodes):
-            self._hosts[node] = RegularNode(node)
-            self.node_colors.append('#1f78b8')
+        # Inicializa os clientes com base na lista fornecida
+        if clients:
+            for client in clients:
+                if client < total_nodes:
+                    self._hosts[client] = ClientNode(client)
+                    self.node_colors.append('red')
+                else:
+                    raise ValueError(f'O nó {client} não existe na topologia de {total_nodes} nós.')
+
+        # Inicializa os nós restantes como regulares
+        for node in range(total_nodes):
+            if node not in self._hosts:
+                self._hosts[node] = RegularNode(node)
+                self.node_colors.append('#1f78b8')
 
         # Inicia os hosts, canais e pares EPRs
         self.start_hosts()
         self.start_channels()
         self.start_eprs()
-
 
     def draw(self):
         node_colors = [self._hosts[node].color() for node in self._graph.nodes()]
@@ -303,7 +497,7 @@ class Network():
             self._graph.edges[edge]['eprs'] = list()
         print("Canais inicializados")
         
-    def start_eprs(self, num_eprs: int = 10):
+    def start_eprs(self, num_eprs: int = 20):
         """
         Inicializa os pares EPRs nas arestas da rede.
 
@@ -436,7 +630,7 @@ class Network():
             else:
                 raise ValueError("Tipo de saída inválido. Escolha entre 'print', 'csv' ou 'variable'.")
 
-    def apply_decoherence_to_all_layers(self, decoherence_factor: float = 0.99):
+    def apply_decoherence_to_all_layers(self, decoherence_factor: float = 0.9999):
         """
         Aplica decoerência a todos os qubits e EPRs nas camadas da rede que já avançaram nos timeslots.
         """
@@ -491,21 +685,6 @@ class Network():
                 edge_data['busy_timeslots'] = set()
             edge_data['busy_timeslots'].add(timeslot)
     
-    # def reserve_link(self, node, timeslot):
-    #     """
-    #     Reserva um link ocupando-o no timeslot especificado.
-        
-    #     Args:
-    #         node (int): O nó atual sendo reservado.
-    #         timeslot (int): O timeslot a ser reservado.
-    #     """
-    #     for neighbor in self._graph.neighbors(node):
-    #         # Adiciona o timeslot ao atributo de ocupação da aresta
-    #         edge_data = self._graph.get_edge_data(node, neighbor)
-    #         if 'busy_timeslots' not in edge_data:
-    #             edge_data['busy_timeslots'] = set()
-    #         edge_data['busy_timeslots'].add(timeslot)
-
 
 
     # SIMULAÇÃO DA REDE
@@ -554,12 +733,12 @@ class Network():
         print(qc)
 
         # Desenha e exibe o circuito graficamente
-        fig = qc.draw('mpl')
+        fig = qc.draw("mpl",style="clifford")
         plt.show()
 
         # Salva as instruções para log e debug
         saved_instructions = self.save_circuit_instructions(qc)
-        self.logger.log(f"Circuito aleatório gerado com {num_qubits} qubits e {num_gates} portas.")
+        self.logger.log(f"Circuito aleatório gerado com {num_qubits} qubits e {num_gates} portas. Instruções sobre o circuito.")
         for instr in saved_instructions:
             self.logger.log(f"Instrução: {instr}")
 
@@ -578,44 +757,13 @@ class Network():
         instructions = []
         for instruction in circuit.data:
             operation = instruction.operation.name
-            qubits = [qubit.index for qubit in instruction.qubits]
+            qubits = [circuit.find_bit(qubit).index for qubit in instruction.qubits]
             instructions.append({
                 'operation': operation,
                 'qubits': qubits,
             })
         return instructions
     
-    # def generate_request(self, alice_id, bob_id, num_qubits, num_gates):
-    #     """
-    #     Gera uma requisição de circuito aleatório e a armazena na lista de requisições.
-
-    #     Args:
-    #         alice_id (int): ID do cliente (Alice).
-    #         bob_id (int): ID do servidor (Bob).
-    #         num_qubits (int): Número de qubits no circuito.
-    #         num_gates (int): Número de operações (portas) no circuito.
-    #     """
-    #     # Gera o circuito aleatório
-    #     circuit, generated_num_qubits = self.generate_random_circuit(num_qubits=num_qubits, num_gates=num_gates)
-
-    #     # Escolhe um protocolo aleatoriamente
-    #     protocols = ["AC_BQC", "BFK_BQC"]  # Protocolos disponíveis
-    #     protocol = random.choice(protocols)
-
-    #     # Cria a requisição com o circuito e protocolo
-    #     request = {
-    #         'alice_id': alice_id,
-    #         'bob_id': bob_id,
-    #         'num_qubits': generated_num_qubits,
-    #         'circuit': circuit,
-    #         'protocol': protocol,  # Inclui o protocolo
-    #     }
-
-    #     # Adiciona a requisição à fila
-    #     self.requests_queue.append(request)
-    #     print(f"Requisição adicionada: Alice {alice_id} -> Bob {bob_id} com protocolo {protocol}.")
-        
-    #     return request
 
     def generate_request(self, alice_id, bob_id, num_qubits, num_gates):
         """
@@ -656,14 +804,17 @@ class Network():
         
         Args:
             controller (Controller): O controlador responsável por agendar as requisições.
+        Returns:
+            dict: Feedback do controlador com o status de cada requisição.
         """
         if hasattr(controller, 'schedule_requests'):
-            controller.schedule_requests(self.requests_queue)  # Passa a fila de requisições
+            feedback = controller.schedule_requests(self.requests_queue)  # Recebe feedback
             self.requests_queue.clear()  # Esvazia a fila após envio
             print("Todas as requisições foram enviadas para o controlador.")
+            return feedback
         else:
             raise AttributeError("O controlador fornecido não possui o método 'schedule_requests'.")
-        
+
     def execute_scheduled_requests(self, scheduled_requests):
         """
         Recebe e executa as requisições agendadas pelo controlador na rede.
@@ -682,9 +833,6 @@ class Network():
             for request in requests:
                 self.execute_request(request)
 
-            # Registra métricas após o timeslot
-            self.register_execution_metrics()
-            self.logger.log(f"Requisições do timeslot {timeslot} concluídas.")
 
     def execute_request(self, request):
         """
@@ -708,6 +856,67 @@ class Network():
             self.application_layer.run_app("BFK_BQC", alice_id=alice_id, bob_id=bob_id, num_qubits=num_qubits, num_rounds=num_rounds, circuit=quantum_circuit)
         else:
             self.logger.log(f"Protocolo '{protocol}' não reconhecido.")
+
+
+    # def execute_request_on_slice(self, request, slice_id):
+    #     """
+    #     Simula a execução de uma requisição em um slice específico.
+
+    #     Args:
+    #         request (dict): Requisição a ser executada.
+    #         slice_id (str): ID do slice onde a requisição será executada.
+
+    #     Returns:
+    #         bool: True se a execução for bem-sucedida, False caso contrário.
+    #     """
+    #     alice_id = request['alice_id']
+    #     bob_id = request['bob_id']
+    #     protocol = request['protocol']
+    #     quantum_circuit = request['quantum_circuit']
+
+    #     self.logger.log(f"Executando requisição: Alice {alice_id} -> Bob {bob_id}, Protocolo: {protocol}, Slice: {slice_id}")
+
+    #     # Simulação de execução
+    #     try:
+    #         # Simula a execução baseada no protocolo
+    #         if protocol == "AC_BQC":
+    #             self.application_layer.run_app("AC_BQC", alice_id=alice_id, bob_id=bob_id, circuit=quantum_circuit)
+    #         elif protocol == "BFK_BQC":
+    #             self.application_layer.run_app("BFK_BQC", alice_id=alice_id, bob_id=bob_id, circuit=quantum_circuit)
+    #         else:
+    #             self.logger.log(f"Protocolo desconhecido: {protocol}")
+    #             return False
+
+    #         self.logger.log(f"Requisição {alice_id} -> {bob_id} executada com sucesso no slice {slice_id}.")
+    #         return True
+    #     except Exception as e:
+    #         self.logger.log(f"Erro ao executar requisição {alice_id} -> {bob_id}: {str(e)}")
+    #         return False
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -737,29 +946,6 @@ class Network():
     #     # Adicionar a requisição à fila de requisições
     #     self.requests_queue.append(request)
     #     print(f"Requisição adicionada para Alice {alice_id} -> Bob {bob_id} com {generated_num_qubits} qubits.")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
