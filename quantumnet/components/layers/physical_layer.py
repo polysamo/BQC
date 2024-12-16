@@ -145,9 +145,20 @@ class PhysicalLayer:
             return
         try:
             self._network.graph.edges[u, v]['eprs'].remove(epr)
-            self.logger.debug(f'Par EPR {epr} removido do canal {channel}.')
+            # self.logger.debug(f'Par EPR {epr} removido do canal {channel}.')
         except ValueError:
             self.logger.debug(f'Par EPR {epr} não encontrado no canal {channel}.')
+    
+    def remove_all_eprs_from_channel(self, channel: tuple):
+        """Remove todos os pares EPR do canal especificado."""
+        u, v = channel
+        if not self._network.graph.has_edge(u, v):
+            self.logger.debug(f'Canal {channel} não existe.')
+            return
+        # Copia a lista de EPRs
+        eprs_copy = list(self._network.graph.edges[u, v].get('eprs', []))
+        for epr in eprs_copy:
+            self.remove_epr_from_channel(epr, channel)
 
     def fidelity_measurement_only_one(self, qubit: Qubit):
         """Mede a fidelidade de um qubit.

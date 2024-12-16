@@ -32,10 +32,11 @@ class Network():
         self.max_prob = 1
         self.min_prob = 0.2
         self.timeslot_total = 0
-        self.qubit_timeslots = {}  # Dicionário para armazenar qubits criados e seus timeslots
-        self.requests_queue = []   # Lista para armazenar requisições
+        self.qubit_timeslots = {} 
+        self.requests_queue = []   
         self.final_slice_1_paths = None  
         self.final_slice_2_paths = None  
+
     @property
     def hosts(self):
         """
@@ -239,15 +240,15 @@ class Network():
         self._graph = nx.convert_node_labels_to_integers(self._graph)  # Converte rótulos dos nós para inteiros
         total_nodes = len(self._graph.nodes)
 
-        # 2. Validar os IDs de clientes e servidor
+        # Valida os IDs de clientes e servidor
         if server >= total_nodes or any(client >= total_nodes for client in clients):
             raise ValueError("IDs de clientes ou servidor estão fora do intervalo de nós disponíveis na topologia.")
 
-        # 3. Configurar pesos nas arestas
+        # Configura pesos nas arestas
         for edge in self._graph.edges:
             self._graph.edges[edge]['weight'] = 1
 
-        # 4. Inicializar os nós como ServerNode, ClientNode ou RegularNode
+        # Inicializa os nós como ServerNode, ClientNode ou RegularNode
         self._hosts = {}
         self.node_colors = []
 
@@ -262,14 +263,15 @@ class Network():
                 self._hosts[node] = RegularNode(node)
                 self.node_colors.append('#1f78b8')  # Nós regulares
 
-        # 5. Inicializar canais e EPRs
+        # Inicializa canais e EPRs
         self.start_hosts()
         self.start_channels()
         self.start_eprs()
 
-        # 6. Log e confirmação
+        # Log e confirmação
         self.logger.log(f"Topologia configurada: {graph_type} ({dimensions}) com {len(clients)} clientes e 1 servidor.")
         print("Topologia configurada com sucesso para slices!")
+
 
     def calculate_paths(self, clients, server):
         """
@@ -323,7 +325,6 @@ class Network():
 
         return final_slice_1_paths, final_slice_2_paths
 
-    
 
     def visualize_slices(self, clients, server, slice_1_paths, slice_2_paths):
         """
@@ -335,22 +336,21 @@ class Network():
             slice_1_paths (list): Lista de caminhos para o primeiro slice.
             slice_2_paths (list): Lista de caminhos para o segundo slice.
         """
-        pos = nx.spring_layout(self._graph)  # Generate positions for the nodes
+        pos = nx.spring_layout(self._graph)  # Gera as posições para o nó 
         plt.figure(figsize=(10, 10))
 
-        # Draw the base graph
+        # Desenha a base do gráfico
         nx.draw(self._graph, pos, with_labels=True, node_size=500, node_color="lightgray", edge_color="gray")
 
-        # Highlight the server and client nodes
         nx.draw_networkx_nodes(self._graph, pos, nodelist=[server], node_color="red", label="Server")
         nx.draw_networkx_nodes(self._graph, pos, nodelist=clients, node_color="blue", label="Clients")
 
-        # Draw Slice 1 paths
+        # Desenha o caminho do slice 1
         for path in slice_1_paths:
             edges = [(path[i], path[i + 1]) for i in range(len(path) - 1)]
             nx.draw_networkx_edges(self._graph, pos, edgelist=edges, edge_color="green", width=2, label="Slice 1")
 
-        # Draw Slice 2 paths
+        # Desenha o caminho do slice 2
         for path in slice_2_paths:
             edges = [(path[i], path[i + 1]) for i in range(len(path) - 1)]
             nx.draw_networkx_edges(self._graph, pos, edgelist=edges, edge_color="purple", width=3, label="Slice 2")
@@ -366,6 +366,9 @@ class Network():
         Args:
             clients (list): IDs dos nós clientes.
             server (int): ID do nó servidor.
+
+        Returns:
+            tuple: final_slice_1_paths, final_slice_2_paths
         """
         # Configura pesos padrão
         for edge in self._graph.edges:
@@ -381,14 +384,14 @@ class Network():
         print("Final Slice 1 Paths:", self.final_slice_1_paths)
         print("Final Slice 2 Paths:", self.final_slice_2_paths)
 
-        # # Print the paths after the simulation
-        # print("Final Slice 1 Paths:", slice_1)
-        # print("Final Slice 2 Paths:", slice_2)
-
         # Visualiza os slices
         self.visualize_slices(clients, server, slice_1, slice_2)
 
         self.logger.log(f"Simulação de slices concluída para {len(clients)} clientes e servidor {server}.")
+
+        # Retorna os caminhos para a camada de aplicação poder utilizá-los
+        return self.final_slice_1_paths, self.final_slice_2_paths
+
         
     def set_ready_topology(self, topology_name: str, num_clients: int, *args: int, clients=None, server=None) -> None:
         """
@@ -497,7 +500,7 @@ class Network():
             self._graph.edges[edge]['eprs'] = list()
         print("Canais inicializados")
         
-    def start_eprs(self, num_eprs: int = 20):
+    def start_eprs(self, num_eprs: int = 10):
         """
         Inicializa os pares EPRs nas arestas da rede.
 
@@ -630,7 +633,8 @@ class Network():
             else:
                 raise ValueError("Tipo de saída inválido. Escolha entre 'print', 'csv' ou 'variable'.")
 
-    def apply_decoherence_to_all_layers(self, decoherence_factor: float = 0.9999):
+
+    def apply_decoherence_to_all_layers(self, decoherence_factor: float = 0.001):
         """
         Aplica decoerência a todos os qubits e EPRs nas camadas da rede que já avançaram nos timeslots.
         """
@@ -642,7 +646,7 @@ class Network():
                 creation_timeslot = self.qubit_timeslots[qubit.qubit_id]['timeslot']
                 if creation_timeslot < current_timeslot:
                     current_fidelity = qubit.get_current_fidelity()
-                    new_fidelity = current_fidelity * decoherence_factor
+                    new_fidelity = current_fidelity - (current_fidelity * decoherence_factor)
                     qubit.set_current_fidelity(new_fidelity)
 
         # Aplicar decoerência nos EPRs em todos os canais (arestas da rede)
@@ -650,7 +654,7 @@ class Network():
             if 'eprs' in self._graph.edges[edge]:
                 for epr in self._graph.edges[edge]['eprs']:
                     current_fidelity = epr.get_current_fidelity()
-                    new_fidelity = current_fidelity * decoherence_factor
+                    new_fidelity = current_fidelity - (current_fidelity * decoherence_factor)
                     epr.set_fidelity(new_fidelity)
 
     def is_link_busy(self, node, timeslot):
@@ -685,6 +689,28 @@ class Network():
                 edge_data['busy_timeslots'] = set()
             edge_data['busy_timeslots'].add(timeslot)
     
+    def restart_network(self):
+        """
+        Reinicia a rede, restaurando os EPRs e redefinindo qubits.
+        """
+        # Salva o estado original do log
+        original_disabled_state = Logger.DISABLED
+        
+        # Desativa os logs temporariamente
+        Logger.DISABLED = True
+
+        try:
+            # Reinicializar EPRs
+            self.start_eprs(num_eprs=10)  # Exemplo de reinício com 10 EPRs por canal
+
+            # Reinicializar qubits nos hosts
+            self.start_hosts(num_qubits=5)  # Exemplo de reinício com 5 qubits por host
+        finally:
+            # Restaura o estado original do log
+            Logger.DISABLED = original_disabled_state
+
+        # Log para confirmar a reinicialização (aparecerá apenas se os logs estiverem ativados)
+        self.logger.log("Rede reiniciada com sucesso.")
 
 
     # SIMULAÇÃO DA REDE
@@ -764,31 +790,67 @@ class Network():
             })
         return instructions
     
-
-    def generate_request(self, alice_id, bob_id, num_qubits, num_gates):
+    def generate_request(self, alice_id, bob_id, num_qubits, num_gates, protocols=None, slice_path=None):
         """
-        Gera uma requisição de circuito aleatório e a armazena na lista de requisições.
+        Gera uma requisição de teletransporte de qubits.
+        
+        Args:
+            alice_id (int): ID do cliente (Alice).
+            bob_id (int): ID do servidor (Bob).
+            num_qubits (int): Número de qubits a serem teletransportados.
+            num_gates (int): Número de portas no circuito quântico.
+            protocols (list, opcional): Lista de protocolos (pode conter 'AC_BQC' e/ou 'BFK_BQC').
+            slice_path (list, opcional): Caminho do slice associado.
+        """
+        # Se protocolos não forem especificados, escolhe aleatoriamente entre 'AC_BQC' e 'BFK_BQC'
+        if protocols is None:
+            protocols = random.choice(['AC_BQC', 'BFK_BQC'])
+        elif isinstance(protocols, list) and len(protocols) == 0:
+            protocols = random.choice(['AC_BQC', 'BFK_BQC'])  # Caso a lista esteja vazia, escolhe aleatoriamente
+        
+        # Gere um circuito quântico aleatório
+        quantum_circuit = self.generate_random_circuit(num_qubits, num_gates)
+        
+        # Cria a requisição com os dados fornecidos
+        request = {
+            "alice_id": alice_id,
+            "bob_id": bob_id,
+            "num_qubits": num_qubits,
+            "quantum_circuit": quantum_circuit,
+            "protocol": protocols, 
+            "slice_path": slice_path,
+        }
+
+        # Adiciona a requisição à fila
+        self.requests_queue.append(request)
+        self.logger.log(f"Requisição adicionada: Alice {alice_id} -> Bob {bob_id} com protocolo {protocols}.")
+        
+        return request
+
+
+    def generate_request_slice(self, alice_id, bob_id, num_qubits, num_gates, protocol=None, slice_path=None):
+        """
+        Gera uma requisição de teletransporte de qubits.
 
         Args:
             alice_id (int): ID do cliente (Alice).
             bob_id (int): ID do servidor (Bob).
-            num_qubits (int): Número de qubits no circuito.
-            num_gates (int): Número de operações (portas) no circuito.
+            num_qubits (int): Número de qubits a serem teletransportados.
+            num_gates (int): Número de portas no circuito quântico.
+            protocol (str): Protocolo associado à requisição.
+            slice_path (list): Caminho do slice associado.
         """
-        # Gera o circuito aleatório
-        quantum_circuit, generated_num_qubits = self.generate_random_circuit(num_qubits=num_qubits, num_gates=num_gates)
+        # Gere um circuito quântico aleatório
+        quantum_circuit = self.generate_random_circuit(num_qubits, num_gates)
 
-        # Escolhe um protocolo aleatoriamente
-        protocols = ["AC_BQC", "BFK_BQC"]  # Protocolos disponíveis
-        protocol = random.choice(protocols)
-
-        # Cria a requisição com o circuito e protocolo
+        # Cria a requisição com os dados fornecidos
         request = {
-            'alice_id': alice_id,
-            'bob_id': bob_id,
-            'num_qubits': generated_num_qubits,
-            'quantum_circuit': quantum_circuit,  # O circuito é armazenado aqui
-            'protocol': protocol,  # O nome do protocolo é armazenado aqui
+            "alice_id": alice_id,
+            "bob_id": bob_id,
+            "num_qubits": num_qubits,
+            "quantum_circuit": quantum_circuit,
+            "protocol": protocol,
+            "slice_path": slice_path,
         }
 
         # Adiciona a requisição à fila
@@ -808,53 +870,94 @@ class Network():
             dict: Feedback do controlador com o status de cada requisição.
         """
         if hasattr(controller, 'schedule_requests'):
-            feedback = controller.schedule_requests(self.requests_queue)  # Recebe feedback
+            feedback = controller.schedule_requests(self.requests_queue)  
             self.requests_queue.clear()  # Esvazia a fila após envio
             print("Todas as requisições foram enviadas para o controlador.")
             return feedback
         else:
             raise AttributeError("O controlador fornecido não possui o método 'schedule_requests'.")
 
-    def execute_scheduled_requests(self, scheduled_requests):
+    # def execute_scheduled_requests(self, scheduled_requests,slice_paths=None):
+    #     """
+    #     Recebe e executa as requisições agendadas pelo controlador na rede.
+        
+    #     Args:
+    #         scheduled_requests (dict): Dicionário de requisições agendadas por timeslot.
+    #     """
+    #     for timeslot, requests in scheduled_requests.items():
+    #         self.logger.log(f"Executando requisições do timeslot {timeslot}.")
+            
+    #         # Avança para o timeslot correspondente
+    #         while self.get_timeslot() < timeslot:
+    #             self.timeslot()  # Incrementa o timeslot da rede
+    #             self.logger.log(f"Timeslot avançado para {self.get_timeslot()}.")
+
+    #         for request in requests:
+    #             self.execute_request(request,slice_paths)
+
+    def execute_scheduled_requests(self, scheduled_requests, slice_paths=None):
         """
         Recebe e executa as requisições agendadas pelo controlador na rede.
         
         Args:
             scheduled_requests (dict): Dicionário de requisições agendadas por timeslot.
+            slice_paths (dict, optional): Caminhos associados aos slices, se disponíveis.
         """
         for timeslot, requests in scheduled_requests.items():
-            self.logger.log(f"Executando requisições do timeslot {timeslot}.")
-            
+            # Reinicia a rede antes de processar o timeslot atual
+            self.logger.log(f"Reiniciando a rede antes de processar o timeslot {timeslot}.")
+            self.restart_network()  # Corrigido para chamar diretamente o método da instância atual
+            self.logger.log(f"Rede reiniciada. Timeslot atual: {timeslot}.")
+
             # Avança para o timeslot correspondente
             while self.get_timeslot() < timeslot:
                 self.timeslot()  # Incrementa o timeslot da rede
                 self.logger.log(f"Timeslot avançado para {self.get_timeslot()}.")
 
+            # Executa as requisições do timeslot
+            self.logger.log(f"Executando requisições do timeslot {timeslot}.")
             for request in requests:
-                self.execute_request(request)
+                self.execute_request(request, slice_paths)
 
 
-    def execute_request(self, request):
+    def execute_request(self, request, slice_paths=None):
         """
         Executa uma requisição, enviando os detalhes para a camada de aplicação da rede.
         
         Args:
-            request (dict): Requisição contendo informações como Alice, Bob, circuito e qubits.
+            request (dict): Requisição contendo informações como Alice, Bob, circuito, qubits e opcionalmente slice_path.
+            slice_paths (dict, optional): Dicionário com os caminhos dos slices. Se None, tenta usar o slice_path da requisição ou cálculo automático.
         """
         alice_id = request['alice_id']
         bob_id = request['bob_id']
         num_qubits = request['num_qubits']
         protocol = request['protocol']
-        quantum_circuit = request['quantum_circuit']  # O circuito real é usado aqui
-        num_rounds = request.get('num_rounds', 10)  # Valor padrão de 10 rounds se não especificado
+        quantum_circuit = request['quantum_circuit']
+        num_rounds = request.get('num_rounds', 10)  
 
         self.logger.log(f"Executando requisição: Alice {alice_id} -> Bob {bob_id}, Protocolo: {protocol}")
 
+        # Verifica se a requisição já possui um slice_path
+        slice_path = request.get('slice_path', None)
+
+        # Se não houver slice_path na requisição e slice_paths foi fornecido, tenta extrair de slice_paths
+        if slice_path is None and slice_paths:
+            slice_key = 'slice_1' if protocol == 'BFK_BQC' else 'slice_2'
+            slice_path = slice_paths.get(slice_key)
+            if slice_path:
+                self.logger.log(f"Caminho para {slice_key}: {slice_path}")
+                request['slice_path'] = slice_path
+            else:
+                self.logger.log(f"Warning: Nenhum caminho encontrado para o slice '{slice_key}'.")
+
+        # Executa o protocolo específico
         if protocol == "AC_BQC":
-            self.application_layer.run_app("AC_BQC", alice_id=alice_id, bob_id=bob_id, num_qubits=num_qubits, circuit=quantum_circuit)
+            self.application_layer.run_app("AC_BQC", alice_id=alice_id, bob_id=bob_id,
+                                        num_qubits=num_qubits, circuit=quantum_circuit,
+                                        slice_path=slice_path)
         elif protocol == "BFK_BQC":
-            self.application_layer.run_app("BFK_BQC", alice_id=alice_id, bob_id=bob_id, num_qubits=num_qubits, num_rounds=num_rounds, circuit=quantum_circuit)
+            self.application_layer.run_app("BFK_BQC", alice_id=alice_id, bob_id=bob_id,
+                                        num_qubits=num_qubits, num_rounds=num_rounds,
+                                        circuit=quantum_circuit, slice_path=slice_path)
         else:
             self.logger.log(f"Protocolo '{protocol}' não reconhecido.")
-
-

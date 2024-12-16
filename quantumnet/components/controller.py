@@ -3,8 +3,7 @@ from ..components import Network, Host, Logger
 from qiskit import QuantumCircuit
 import random
 from collections import defaultdict
-#get profundidade (depht) do circuito
-#numero de timeslots passadod= deplth
+
 class Controller():
     def __init__(self, network):
         """
@@ -57,13 +56,21 @@ class Controller():
             # Registra as rotas e protocolos nos logs
             self.logger.log(f"Slice {slice_id} configurado para protocolo {protocol} com rotas: {self.slices[slice_id]}")
 
+
     def create_routing_table(self, host_id: int) -> dict:
         """
-        Cria tabela de roteamento com os caminhos mais curtos para cada nó.
+        Cria uma tabela de roteamento com os caminhos mais curtos para cada nó.
+
+        Args:
+            host_id (int): ID do host para o qual criar a tabela de roteamento.
+
+        Returns:
+            dict: Dicionário de destinos para caminhos mais curtos.
         """
         shortest_paths = nx.shortest_path(self.network.graph, source=host_id)
         routing_table = {dest: path for dest, path in shortest_paths.items()}
         return routing_table
+    
 
     def register_routing_tables(self):
         """
@@ -78,21 +85,29 @@ class Controller():
     def receive_request(self, request):
         """
         Recebe uma requisição e tenta agendá-la.
+
+        Args:
+            request (dict): Dicionário com a requisição contendo informações como Alice, Bob, protocolo, etc.
         """
         self.pending_requests.append(request)
         self.logger.log(f"Requisição recebida: {request}")
         self.process_requests()
-
+        
     def process_requests(self, max_attempts=1):
-        """
-        Processa requisições pendentes, tentando agendá-las no timeslot atual.
-        """
         self.prioritize_requests()
         attempts = 0
+        # Suponha que você queira começar no timeslot 1
+        # Assim, se o timeslot atual for 0, incrementamos manualmente
         while self.pending_requests and attempts < max_attempts:
             current_timeslot = self.network.get_timeslot()
-            request = self.pending_requests[0]
 
+            # Se quisermos sempre começar do timeslot 1 em diante, podemos fazer:
+            if current_timeslot == 0:
+                # Avança um timeslot para começar do 1
+                self.network.timeslot()
+                current_timeslot = self.network.get_timeslot()
+
+            request = self.pending_requests[0]
             if self.try_schedule_request(request, current_timeslot):
                 self.pending_requests.pop(0)
                 attempts = 0
@@ -101,13 +116,21 @@ class Controller():
                 self.network.timeslot()
                 attempts += 1
 
+
     def try_schedule_request(self, request, current_timeslot):
         """
-        Tenta agendar uma requisição para um timeslot disponível ou compartilha um existente.
+        Tenta agendar uma requisição em um timeslot disponível ou compartilhar um existente.
+
+        Args:
+            request (dict): Requisição a ser agendada.
+            current_timeslot (int): Timeslot atual.
+
+        Returns:
+            bool: True se a requisição foi agendada, False caso contrário.
         """
         alice_id = request['alice_id']
         bob_id = request['bob_id']
-        route = self.network.networklayer.short_route_valid(alice_id, bob_id)
+        route = self.network.networklayer.short_route_valid(alice_id, bob_id,increment_timeslot=False)
 
         if route:
             # Tentar reutilizar um timeslot existente
@@ -166,14 +189,20 @@ class Controller():
 
         self.logger.log(f"Executando requisições do timeslot {timeslot}.")
         for request in self.scheduled_requests[timeslot]:
-            if self.execute_request(request):
+            if self.execute_request_one(request):
                 self.executed_requests.append({"request": request, "timeslot": timeslot})
 
         del self.scheduled_requests[timeslot]  # Limpa as requisições já executadas
 
-    def execute_request(self, request):
+    def execute_request_one(self, request):
         """
         Executa uma requisição específica, validando a rota.
+
+        Args:
+            request (dict): Requisição a ser executada.
+
+        Returns:
+            bool: True se a execução foi bem-sucedida, False caso contrário.
         """
         alice_id = request['alice_id']
         bob_id = request['bob_id']
@@ -202,7 +231,11 @@ class Controller():
 
     def reserve_route(self, route, timeslot):
         """
-        Marca os links de uma rota como ocupados no timeslot especificado.
+        Reserva uma rota para uso no timeslot especificado.
+
+        Args:
+            route (list): Rota a ser reservada.
+            timeslot (int): Timeslot em que a rota será reservada.
         """
         for i in range(len(route) - 1):
             link = (route[i], route[i + 1])
@@ -211,7 +244,10 @@ class Controller():
 
     def release_route(self, route):
         """
-        Libera os links de uma rota, permitindo reuso em outros timeslots.
+        Libera a rota, permitindo seu reuso em outros timeslots.
+
+        Args:
+            route (list): Rota a ser liberada.
         """
         for i in range(len(route) - 1):
             link = (route[i], route[i + 1])
@@ -223,19 +259,24 @@ class Controller():
     def find_next_available_timeslot(self, route):
         """
         Encontra o próximo timeslot em que a rota estará completamente livre.
+
+        Args:
+            route (list): Rota a ser verificada.
+
+        Returns:
+            int: Próximo timeslot livre para a rota.
         """
         current_timeslot = self.network.get_timeslot()
         while not self.is_route_available(route, current_timeslot):
             current_timeslot += 1
         return current_timeslot
 
-
     def prioritize_requests(self):
         """
         Ordena as requisições pendentes com base em critérios de prioridade.
         """
-        self.pending_requests.sort(key=lambda req: (req['num_qubits'], -len(req['quantum_circuit'].data)))
-
+        # Verifica se quantum_circuit é um objeto válido
+        self.pending_requests.sort(key=lambda req: (req['num_qubits'], -len(req['quantum_circuit'][0].data)))
 
     def generate_schedule_report(self):
         """
@@ -262,21 +303,31 @@ class Controller():
 
     def send_scheduled_requests(self):
         """
-        Executa todas as requisições agendadas em sequência.
+        Executa todas as requisições agendadas em sequência,
+        reiniciando a rede após cada timeslot para evitar decoerência.
         """
         self.logger.log("Iniciando execução das requisições agendadas.")
         for ts in sorted(self.scheduled_requests.keys()):
+            self.logger.log(f"Processando timeslot {ts}.")
+            
+            # Executa as requisições do timeslot
             self.execute_scheduled_requests(ts)
+
+            # Após a execução, reinicia a rede
+            self.logger.log(f"Estado da rede antes da reinicialização: Timeslot {self.network.get_timeslot()}.")
+            self.network.restart_network()
+            self.logger.log(f"Rede reiniciada. Timeslot reiniciado para {self.network.get_timeslot()}.")
 
 
     # SIMULAÇÃO EM SLICES
-
-    def schedule_requests(self, requests):
+    
+    def schedule_requests(self, requests, slice_paths=None):
         """
         Mapeia as requisições para slices e agenda-as em timeslots.
 
         Args:
             requests (list): Lista de requisições.
+            slice_paths (dict, optional): Dicionário com os caminhos dos slices. Se não fornecido, será considerado None.
 
         Returns:
             dict: Timeslots com requisições agendadas.
@@ -303,8 +354,21 @@ class Controller():
                 scheduled_timeslots[current_timeslot] = current_slot_requests
                 current_timeslot += 1
 
+        # Verificar se slice_paths não é None antes de tentar acessar
+        if slice_paths:
+            for timeslot, requests in scheduled_timeslots.items():
+                for request in requests:
+                    protocol = request.get('protocol')
+                    slice_key = 'slice_1' if protocol == 'BFK_BQC' else 'slice_2'
+                    path = slice_paths.get(slice_key)  # Tenta acessar a rota associada ao slice
+                    if path:
+                        request['slice_path'] = path
+                    else:
+                        self.logger.log(f"Warning: Nenhum caminho encontrado para o slice '{slice_key}'.")
+
         self.logger.log(f"Requisições agendadas em timeslots: {scheduled_timeslots}")
         return scheduled_timeslots
+    
 
     def map_requests_to_slices(self, requests):
         """
@@ -337,8 +401,7 @@ class Controller():
             slice_requests[slice_id].append(request)
 
         return slice_requests
-
-
+    
 
     def schedule_requests_in_timeslots(self, slice_requests):
         """
@@ -386,5 +449,3 @@ class Controller():
                     f"Protocolo: {protocol}, Nº de Qubits: {request['num_qubits']}, Caminho do {slice_key}: {path}")
             print("-" * 60)
         print("\n=== Fim do Relatório ===\n")
-
-   

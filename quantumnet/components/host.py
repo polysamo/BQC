@@ -101,7 +101,6 @@ class Host():
         Logger.get_instance().debug(f'Qubit {qubit.qubit_id} adicionado à memória do Host {self.host_id}.')
 
 
-
     def set_routing_table(self, routing_table: dict):
         """
         Define a tabela de roteamento do host.
@@ -130,7 +129,6 @@ class Host():
         """
 
         print(f'Host {self.host_id} informou ao controlador que a aplicação terminou.')
-        
         
     # Tipos de nós que teremos na rede, como servidor, cliente e normais 
 
