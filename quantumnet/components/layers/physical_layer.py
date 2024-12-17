@@ -61,8 +61,9 @@ class PhysicalLayer:
         """
         return self._failed_eprs
     
+    
     def get_used_eprs(self):
-        self.logger.debug(f"Eprs usados na camada {self.__class__.__name__}: {self.used_eprs}")
+        self.logger.debug(f"Eprs criados na camada {self.__class__.__name__}: {self.used_eprs}")
         return self.used_eprs
     
     def get_used_qubits(self):
@@ -102,7 +103,7 @@ class PhysicalLayer:
         self.logger.debug(f'Qubit {qubit_id} criado com fidelidade inicial {initial_fidelity} e adicionado à memória do Host {host_id}.')
 
 
-    def create_epr_pair(self, fidelity: float = 1.0, increment_timeslot: bool = True, increment_eprs: bool = True):
+    def create_epr_pair(self, fidelity: float = 1.0, increment_timeslot: bool = True, increment_eprs: bool = False):
         """Cria um par de qubits entrelaçados.
 
         Returns:

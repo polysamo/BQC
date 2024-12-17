@@ -500,7 +500,7 @@ class Network():
             self._graph.edges[edge]['eprs'] = list()
         print("Canais inicializados")
         
-    def start_eprs(self, num_eprs: int = 10):
+    def start_eprs(self, num_eprs: int = 2):
         """
         Inicializa os pares EPRs nas arestas da rede.
 
@@ -551,7 +551,14 @@ class Network():
             for qubit_id, info in self.qubit_timeslots.items():
                 print(f"Qubit {qubit_id} foi criado no timeslot {info['timeslot']}")
                 
-                
+    def get_created_eprs(self):
+        total_created_eprs = (self._physical.get_created_eprs()+
+                      self._link.get_created_eprs() +
+                      self._network.get_created_eprs() +
+                      self._application.get_created_eprs()
+        )
+        return total_created_eprs
+    
     def get_total_useds_eprs(self):
         """
         Retorna o número total de EPRs (pares entrelaçados) utilizados na rede.
@@ -790,7 +797,7 @@ class Network():
             })
         return instructions
     
-    def generate_request(self, alice_id, bob_id, num_qubits, num_gates, protocols=None, slice_path=None):
+    def generate_request(self, alice_id, bob_id, num_qubits, num_gates, protocols=None, slice_path=None,scenario=None):
         """
         Gera uma requisição de teletransporte de qubits.
         
@@ -801,6 +808,8 @@ class Network():
             num_gates (int): Número de portas no circuito quântico.
             protocols (list, opcional): Lista de protocolos (pode conter 'AC_BQC' e/ou 'BFK_BQC').
             slice_path (list, opcional): Caminho do slice associado.
+            scenario (int, opcional): Cenário para execução (1 ou 2).
+
         """
         # Se protocolos não forem especificados, escolhe aleatoriamente entre 'AC_BQC' e 'BFK_BQC'
         if protocols is None:
@@ -819,16 +828,16 @@ class Network():
             "quantum_circuit": quantum_circuit,
             "protocol": protocols, 
             "slice_path": slice_path,
+            "scenario": scenario  
         }
 
         # Adiciona a requisição à fila
         self.requests_queue.append(request)
-        self.logger.log(f"Requisição adicionada: Alice {alice_id} -> Bob {bob_id} com protocolo {protocols}.")
-        
+        self.logger.log(f"Requisição adicionada: Alice {alice_id} -> Bob {bob_id} com protocolo {protocols} e cenário {scenario}.")
         return request
 
 
-    def generate_request_slice(self, alice_id, bob_id, num_qubits, num_gates, protocol=None, slice_path=None):
+    def generate_request_slice(self, alice_id, bob_id, num_qubits, num_gates, protocol=None, slice_path=None,scenario=None):
         """
         Gera uma requisição de teletransporte de qubits.
 
@@ -839,6 +848,7 @@ class Network():
             num_gates (int): Número de portas no circuito quântico.
             protocol (str): Protocolo associado à requisição.
             slice_path (list): Caminho do slice associado.
+            
         """
         # Gere um circuito quântico aleatório
         quantum_circuit = self.generate_random_circuit(num_qubits, num_gates)
@@ -851,12 +861,12 @@ class Network():
             "quantum_circuit": quantum_circuit,
             "protocol": protocol,
             "slice_path": slice_path,
+            "scenario":scenario 
         }
 
         # Adiciona a requisição à fila
         self.requests_queue.append(request)
-        self.logger.log(f"Requisição adicionada: Alice {alice_id} -> Bob {bob_id} com protocolo {protocol}.")
-        
+        self.logger.log(f"Requisição adicionada: Alice {alice_id} -> Bob {bob_id} com protocolo {protocol} e cenário {scenario}.")
         return request
 
 
@@ -876,24 +886,6 @@ class Network():
             return feedback
         else:
             raise AttributeError("O controlador fornecido não possui o método 'schedule_requests'.")
-
-    # def execute_scheduled_requests(self, scheduled_requests,slice_paths=None):
-    #     """
-    #     Recebe e executa as requisições agendadas pelo controlador na rede.
-        
-    #     Args:
-    #         scheduled_requests (dict): Dicionário de requisições agendadas por timeslot.
-    #     """
-    #     for timeslot, requests in scheduled_requests.items():
-    #         self.logger.log(f"Executando requisições do timeslot {timeslot}.")
-            
-    #         # Avança para o timeslot correspondente
-    #         while self.get_timeslot() < timeslot:
-    #             self.timeslot()  # Incrementa o timeslot da rede
-    #             self.logger.log(f"Timeslot avançado para {self.get_timeslot()}.")
-
-    #         for request in requests:
-    #             self.execute_request(request,slice_paths)
 
     def execute_scheduled_requests(self, scheduled_requests, slice_paths=None):
         """
@@ -934,6 +926,8 @@ class Network():
         protocol = request['protocol']
         quantum_circuit = request['quantum_circuit']
         num_rounds = request.get('num_rounds', 10)  
+        scenario = request.get('scenario')  # Obtém o cenário da requisição ou usa 1 como padrão
+
 
         self.logger.log(f"Executando requisição: Alice {alice_id} -> Bob {bob_id}, Protocolo: {protocol}")
 
@@ -954,10 +948,10 @@ class Network():
         if protocol == "AC_BQC":
             self.application_layer.run_app("AC_BQC", alice_id=alice_id, bob_id=bob_id,
                                         num_qubits=num_qubits, circuit=quantum_circuit,
-                                        slice_path=slice_path)
+                                        slice_path=slice_path,scenario=scenario)
         elif protocol == "BFK_BQC":
             self.application_layer.run_app("BFK_BQC", alice_id=alice_id, bob_id=bob_id,
                                         num_qubits=num_qubits, num_rounds=num_rounds,
-                                        circuit=quantum_circuit, slice_path=slice_path)
+                                        circuit=quantum_circuit, slice_path=slice_path,scenario=scenario)
         else:
             self.logger.log(f"Protocolo '{protocol}' não reconhecido.")
