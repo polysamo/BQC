@@ -641,7 +641,7 @@ class Network():
                 raise ValueError("Tipo de saída inválido. Escolha entre 'print', 'csv' ou 'variable'.")
 
 
-    def apply_decoherence_to_all_layers(self, decoherence_factor: float = 0.001):
+    def apply_decoherence_to_all_layers(self, decoherence_factor: float = 0.01):
         """
         Aplica decoerência a todos os qubits e EPRs nas camadas da rede que já avançaram nos timeslots.
         """
