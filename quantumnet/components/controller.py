@@ -17,6 +17,7 @@ class Controller():
         self.occupied_routes = {}  # Rastreia rotas ocupadas por timeslot
         self.scheduled_requests_slice = defaultdict(list)
         self.slices = {}
+        self.failed_requests = []
 
     def initialize_slices(self, network, clients, server, protocols, slice_1_paths, slice_2_paths):
         """
@@ -81,6 +82,24 @@ class Controller():
             self.network.hosts[host_id].set_routing_table(routing_table)
 
     # Gerenciamento de Requisições
+
+
+    def record_failed_request(self, request, reason=None):
+        """
+        Registra uma requisição que falhou.
+
+        Args:
+            request (dict): Detalhes da requisição que falhou.
+            reason (str, optional): Razão pela qual a requisição falhou.
+        """
+        failed_entry = {
+            'request': request.copy(),  # Garante que o estado atual da requisição seja armazenado
+            'reason': reason or "Falha desconhecida",
+            'route': request.get('slice_path', 'Não especificada'),
+        }
+        self.failed_requests.append(failed_entry)
+        self.logger.log(f"Falha registrada: {failed_entry}")
+
 
     def receive_request(self, request):
         """
@@ -209,11 +228,20 @@ class Controller():
         route = self.network.networklayer.short_route_valid(alice_id, bob_id)
 
         if route:
-            self.network.execute_request(request)
-            self.logger.log(f"Requisição executada: {request}")
-            self.release_route(route)
-            return True
-        self.logger.log(f"Falha ao executar requisição: {request}")
+            success = self.network.execute_request(request)
+
+            if success:
+                self.logger.log(f"Requisição executada: {request}")
+                self.release_route(route)
+                return True
+            else:
+                self.logger.log(f"Falha ao executar requisição: {request}")
+                self.record_failed_request(request)  # Registra a falha
+                self.release_route(route)  # Libera a rota mesmo em caso de falha
+                return False
+
+        self.logger.log(f"Falha ao encontrar rota válida para requisição: {request}")
+        self.record_failed_request(request)  # Registra a falha
         return False
 
     # Gerenciamento das Rotas
@@ -280,26 +308,44 @@ class Controller():
 
     def generate_schedule_report(self):
         """
-        Gera um relatório das requisições processadas e agendadas.
+        Gera um relatório das requisições processadas, agendadas e falhas.
         """
-        if not self.executed_requests and not self.scheduled_requests:
-            print("Nenhuma requisição foi processada ou agendada.")
+        if not self.executed_requests and not self.scheduled_requests and not self.failed_requests:
+            print("Nenhuma requisição foi processada, agendada ou falhou.")
             return
 
         print("=== Relatório de Requisições ===")
+        
+        # Requisições executadas com sucesso
         if self.executed_requests:
-            print("Requisições Executadas:")
+            print("\nRequisições Executadas:")
             for entry in self.executed_requests:
                 req = entry["request"]
                 ts = entry["timeslot"]
                 print(f"- {req} | Timeslot: {ts}")
 
+        # Requisições agendadas
         if self.scheduled_requests:
             print("\nRequisições Agendadas:")
             for ts, requests in self.scheduled_requests.items():
                 print(f"Timeslot {ts}:")
                 for req in requests:
                     print(f"- {req}")
+
+        # Requisições que falharam
+        if self.failed_requests:
+            print("\nRequisições que falharam:")
+            for failure in self.failed_requests:
+                req = failure['request']  # Detalhes da requisição
+                reason = failure.get('reason', 'Motivo não especificado')
+                route = failure.get('route', 'Não especificada')
+                print(f"- Alice ID: {req['alice_id']}, Bob ID: {req['bob_id']}, "
+                    f"Nº de Qubits: {req['num_qubits']}, Rota: {route}, "
+                    f"Motivo: {reason}")
+                print(len(self.failed_requests))
+
+        print("\n=== Fim do Relatório ===")
+
 
     def send_scheduled_requests(self):
         """
@@ -430,22 +476,42 @@ class Controller():
 
         return scheduled_timeslots
     
-    def print_report(self, scheduled_timeslots, slice_paths):
-        """
-        Imprime um relatório detalhado de agendamento e execução das requisições no console.
 
-        Args:
-            scheduled_timeslots (dict): Dicionário de timeslots com as requisições agendadas.
-            slice_paths (dict): Dicionário contendo os caminhos para cada slice.
+    def print_report(self, scheduled_timeslots, slice_paths=None):
         """
-        print("\n=== Relatório de Agendamento e Execução de Requisições ===\n")
+        Gera um relatório detalhado das requisições processadas, incluindo status.
+        
+        Args:
+            scheduled_timeslots (dict): Dicionário de requisições agendadas por timeslot.
+            slice_paths (dict, optional): Caminhos associados aos slices.
+        """
+        print("\n=== Relatório de Requisições Executadas ===")
         for timeslot, requests in scheduled_timeslots.items():
-            print(f"Timeslot {timeslot}:")
+            print(f"\nTimeslot {timeslot}:")
             for request in requests:
-                protocol = request['protocol']
-                slice_key = 'slice_1' if protocol == 'BFK_BQC' else 'slice_2'
-                path = slice_paths.get(slice_key)
-                print(f"  - Alice ID: {request['alice_id']}, Bob ID: {request['bob_id']}, "
-                    f"Protocolo: {protocol}, Nº de Qubits: {request['num_qubits']}, Caminho do {slice_key}: {path}")
-            print("-" * 60)
-        print("\n=== Fim do Relatório ===\n")
+                status = request.get('status', 'pendente')
+                slice_path = request.get('slice_path', 'Não especificado')
+                print(f"- Requisição: Alice {request.get('alice_id', 'Desconhecido')} -> Bob {request.get('bob_id', 'Desconhecido')}, "
+                    f"Protocolo: {request.get('protocol', 'Desconhecido')}, Nº de Qubits: {request.get('num_qubits', 'Desconhecido')}, "
+                    f"Slice Path: {slice_path}, Status: {status}")
+        print("\n=== Fim do Relatório ===")
+
+
+    # def print_report(self, scheduled_requests):
+    #     """
+    #     Gera um relatório das requisições processadas, incluindo status.
+        
+    #     Args:
+    #         scheduled_requests (dict): Dicionário de requisições agendadas por timeslot.
+    #     """
+    #     print("\n=== Relatório de Requisições Executadas ===")
+    #     for timeslot, requests in scheduled_requests.items():
+    #         print(f"\nTimeslot {timeslot}:")
+    #         for request in requests:
+    #             status = request.get('status', 'pendente')
+    #             print(f"- Requisição: {request}, Status: {status}")
+    #     print("\n=== Fim do Relatório ===")
+
+
+
+

@@ -640,8 +640,10 @@ class Network():
             else:
                 raise ValueError("Tipo de saída inválido. Escolha entre 'print', 'csv' ou 'variable'.")
 
-
-    def apply_decoherence_to_all_layers(self, decoherence_factor: float = 0.01):
+    #0.001,0.0008875
+    #0.0067 = para testar entre 10 a 15 qubits no BFK_BQC
+    #0.0008875 = para testar entre 20 a 30 qubits no AC_BQC
+    def apply_decoherence_to_all_layers(self, decoherence_factor: float = 0.0009875):
         """
         Aplica decoerência a todos os qubits e EPRs nas camadas da rede que já avançaram nos timeslots.
         """
@@ -909,7 +911,10 @@ class Network():
             # Executa as requisições do timeslot
             self.logger.log(f"Executando requisições do timeslot {timeslot}.")
             for request in requests:
-                self.execute_request(request, slice_paths)
+                # Adiciona status à requisição
+                status = self.execute_request(request, slice_paths)
+                request['status'] = 'executado' if status else 'falhou'
+                self.logger.log(f"Requisição {request} - Status: {request['status']}")
 
 
     def execute_request(self, request, slice_paths=None):
@@ -944,14 +949,27 @@ class Network():
             else:
                 self.logger.log(f"Warning: Nenhum caminho encontrado para o slice '{slice_key}'.")
 
+        success = False
+        
         # Executa o protocolo específico
         if protocol == "AC_BQC":
-            self.application_layer.run_app("AC_BQC", alice_id=alice_id, bob_id=bob_id,
+            success = self.application_layer.run_app("AC_BQC", alice_id=alice_id, bob_id=bob_id,
                                         num_qubits=num_qubits, circuit=quantum_circuit,
                                         slice_path=slice_path,scenario=scenario)
         elif protocol == "BFK_BQC":
-            self.application_layer.run_app("BFK_BQC", alice_id=alice_id, bob_id=bob_id,
+            success = self.application_layer.run_app("BFK_BQC", alice_id=alice_id, bob_id=bob_id,
                                         num_qubits=num_qubits, num_rounds=num_rounds,
                                         circuit=quantum_circuit, slice_path=slice_path,scenario=scenario)
         else:
             self.logger.log(f"Protocolo '{protocol}' não reconhecido.")
+            request['status'] = 'erro'
+            return False
+        
+        request['status'] = 'executado' if success else 'falhou'
+        
+        if success:
+            self.logger.log(f"Requisição executada com sucesso: {request}")
+        else:
+            self.logger.log(f"Falha ao executar requisição: {request}")
+
+        return success

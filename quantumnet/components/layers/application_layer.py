@@ -53,7 +53,7 @@ class ApplicationLayer:
             return self.run_andrews_childs_protocol(alice_id, bob_id, num_qubits, slice_path=slice_path, scenario=scenario)
         elif app_name == "BFK_BQC":
             # Também passamos slice_path aqui
-            return self.bfk_protocol(alice_id, bob_id, num_qubits, num_rounds, slice_path=slice_path)
+            return self.bfk_protocol(alice_id, bob_id, num_qubits, num_rounds, slice_path=slice_path, scenario=scenario)
         else:
             self.logger.log("Aplicação não realizada ou não encontrada.")
             return False
@@ -188,7 +188,7 @@ class ApplicationLayer:
         # Incrementa o timeslot antes de iniciar o protocolo
         self._network.timeslot()
         self.logger.log(f"Timeslot {self._network.get_timeslot()}: Iniciando protocolo Andrew Childs entre Alice {alice_id} e Bob {bob_id}.")
-
+        
         # Limpar memórias de Alice e Bob antes de começar
         self.logger.log("Limpando a memória do cliente (Alice) antes de iniciar o protocolo.")
         alice.memory.clear()
@@ -224,6 +224,13 @@ class ApplicationLayer:
             return None
 
         self.logger.log(f"Rota calculada para o transporte: {route}")
+
+        # Limpar pares EPRs residuais na rota antes de iniciar o protocolo
+        self.logger.log(f"Timeslot {self._network.get_timeslot()}: Limpando pares EPRs residuais antes de iniciar o protocolo.")
+        for i in range(len(route) - 1):
+            u, v = route[i], route[i + 1]
+            self._physical_layer.remove_all_eprs_from_channel((u, v))
+            self.logger.log(f"Pares EPRs limpos no segmento {u} -> {v}.")
 
         # Transporte de Alice para Bob
         success = self._transport_layer.run_transport_layer_eprs(alice_id, bob_id, len(qubits), route=route, scenario=scenario)
@@ -278,112 +285,15 @@ class ApplicationLayer:
         else:
             self.logger.log(f"Erro: Cliente tem {len(alice.memory)} qubits, mas deveria ter {num_qubits} qubits.")
             return None
+        
+        # # Limpar pares EPRs residuais após a conclusão do protocolo
+        # self.logger.log(f"Timeslot {self._network.get_timeslot()}: Limpando pares EPRs residuais após a conclusão da requisição.")
+        # for i in range(len(route) - 1):
+        #     u, v = route[i], route[i + 1]
+        #     self._physical_layer.remove_all_eprs_from_channel((u, v))
+        #     self.logger.log(f"Pares EPRs limpos no segmento {u} -> {v}.")
 
         return qubits
-
-    
-    # def run_andrews_childs_protocol(self, alice_id, bob_id, num_qubits, slice_path=None, scenario=1):
-    #     """
-    #     Executa o protocolo Andrew Childs, onde Alice prepara qubits, envia para Bob, e Bob realiza operações.
-    #     """
-    #     alice = self._network.get_host(alice_id)
-    #     bob = self._network.get_host(bob_id)
-
-    #     # Incrementa o timeslot antes de iniciar o protocolo
-    #     self._network.timeslot()
-    #     self.logger.log(f"Timeslot {self._network.get_timeslot()}: Iniciando protocolo Andrew Childs entre Alice {alice_id} e Bob {bob_id}.")
-
-    #     # Limpar memórias de Alice e Bob antes de começar
-    #     self.logger.log("Limpando a memória do cliente (Alice) antes de iniciar o protocolo.")
-    #     alice.memory.clear()
-    #     self.logger.log("Limpando a memória do servidor (Bob) antes de iniciar o protocolo.")
-    #     bob.memory.clear()
-
-    #     # O cliente prepara qubits e armazena-os
-    #     qubits = [Qubit(qubit_id=random.randint(0, 1000)) for _ in range(num_qubits)]
-    #     self.logger.log(f"Cliente criou {len(qubits)} qubits para a transmissão.")
-
-    #     # Registrar qubits no dicionário de timeslots
-    #     for qubit in qubits:
-    #         self._network.qubit_timeslots[qubit.qubit_id] = {'timeslot': self._network.get_timeslot()}
-    #         self.logger.log(f"Qubit {qubit.qubit_id} registrado no timeslot {self._network.get_timeslot()}")
-
-    #     # Log dos qubits após criação
-    #     for qubit in qubits:
-    #         self.logger.log(f"Qubit {qubit.qubit_id} criado pelo Cliente - Estado: {qubit._qubit_state}, Fase: {qubit._phase}")
-
-    #     # Armazena os qubits criados na memória do cliente
-    #     alice.memory.extend(qubits)
-    #     self.logger.log(f"Alice recebeu {len(qubits)} qubits. Total: {len(alice.memory)} qubits na memória.")
-
-    #     # Cria mensagem clássica com instruções
-    #     self._network.timeslot()
-    #     operations_classical_message = [self.generate_random_operation() for _ in qubits]
-    #     self.logger.log(f"Instruções clássicas enviadas pelo Cliente: {operations_classical_message}")
-
-    #     # Calcula a rota se não fornecida
-    #     route = slice_path or self._network.networklayer.short_route_valid(alice_id, bob_id)
-    #     if not route:
-    #         self.logger.log(f"Erro: Nenhuma rota encontrada entre {alice_id} e {bob_id}.")
-    #         return None
-
-    #     self.logger.log(f"Rota calculada para o transporte: {route}")
-
-    #     # Transporte de Alice para Bob
-    #     success = self._transport_layer.run_transport_layer_eprs(alice_id, bob_id, len(qubits), route=route)
-    #     if not success:
-    #         self.logger.log("Falha ao enviar os qubits para o servidor.")
-    #         return None
-
-    #     alice.memory.clear()
-    #     self.logger.log(f"Cliente enviou {len(qubits)} qubits para o Servidor.")
-    #     self.logger.log(f"Servidor tem {len(bob.memory)} qubits na memória após a recepção.")
-
-    #     # Servidor aplica operações
-    #     self._network.timeslot()
-    #     for qubit, operation in zip(qubits, operations_classical_message):
-    #         self.apply_operation_from_message(qubit, operation)
-    #     self.logger.log("Servidor aplicou as operações instruídas pelo Cliente nos qubits.")
-
-    #     # Log após operações
-    #     for qubit in qubits:
-    #         self.logger.log(f"Qubit {qubit.qubit_id} após operações de Servidor - Estado: {qubit._qubit_state}, Fase: {qubit._phase}")
-        
-    #     # Limpa a memória do Cliente antes de devolver os qubits
-    #     self.logger.log(f"Limpando a memória do cliente antes de receber os qubits devolvidos.")
-    #     alice.memory.clear()
-
-    #     # Devolve os qubits para Alice
-    #     route_back = route[::-1]
-    #     success = self._transport_layer.run_transport_layer_eprs(bob_id, alice_id, len(qubits), route=route_back, is_return=True)
-    #     if not success:
-    #         self.logger.log(f"Falha ao devolver os qubits para o cliente. O servidor tinha {len(qubits)} qubits.")
-    #         return None
-
-    #     # Evita duplicação ao adicionar os qubits devolvidos
-    #     existing_qubits_ids = {qubit.qubit_id for qubit in alice.memory}
-    #     new_qubits = [qubit for qubit in qubits if qubit.qubit_id not in existing_qubits_ids]
-    #     alice.memory.extend(new_qubits)
-    #     self.logger.log(f"Servidor devolveu {len(new_qubits)} qubits para o cliente.")
-
-    #     # Log após retorno
-    #     for qubit in qubits:
-    #         self.logger.log(f"Qubit {qubit.qubit_id} devolvido para o cliente - Estado: {qubit._qubit_state}, Fase: {qubit._phase}")
-
-    #     # Decodificação Clifford
-    #     self._network.timeslot()
-    #     for qubit, operation in zip(qubits, operations_classical_message):
-    #         self.apply_clifford_decoding(qubit, operation)
-    #         self.logger.log(f"Cliente aplicou a decodificação Clifford no qubit {qubit.qubit_id}.")
-
-    #     # Verificação final
-    #     if len(alice.memory) == num_qubits:
-    #         self.logger.log(f"Protocolo concluído com sucesso. O cliente tem {len(alice.memory)} qubits decodificados.")
-    #     else:
-    #         self.logger.log(f"Erro: Cliente tem {len(alice.memory)} qubits, mas deveria ter {num_qubits} qubits.")
-    #         return None
-
-    #     return qubits
 
 
     def generate_random_operation(self):
@@ -428,7 +338,7 @@ class ApplicationLayer:
 
     # PROTOCOLO BFK - BQC
 
-    def bfk_protocol(self, client_id, server_id, num_qubits, num_rounds, slice_path=None):
+    def bfk_protocol(self, client_id, server_id, num_qubits, num_rounds, slice_path=None, scenario=1):
         """
         Executa o protocolo BFK completo: cliente prepara qubits, servidor cria brickwork e cliente envia instruções.
         
@@ -437,12 +347,17 @@ class ApplicationLayer:
             server_id (int): ID do servidor.
             num_qubits (int): Número de qubits preparados pelo cliente.
             num_rounds (int): Número de rodadas de computação.
+            slice_path (list, optional): Caminho específico para o transporte.
+            scenario (int, optional): Define o cenário de simulação (1 ou 2). Default: 1.
             
         Returns:
             list: Resultados finais das medições realizadas pelo servidor.
         """
+        if num_rounds is None:
+            num_rounds = num_qubits
+
         self._network.timeslot()
-        self.logger.log(f"Timeslot {self._network.get_timeslot()}. Iniciando protocolo BFK com {num_qubits} qubits e {num_rounds} rodadas de computação.")
+        self.logger.log(f"Timeslot {self._network.get_timeslot()}. Iniciando protocolo BFK com {num_qubits} qubits, {num_rounds} rodadas, e cenário {scenario}.")
 
         self.used_qubits += num_qubits
 
@@ -466,17 +381,27 @@ class ApplicationLayer:
         self._network.timeslot()
         self.logger.log(f"Timeslot {self._network.get_timeslot()}.")
         qubits = self.prepare_qubits(client_id, num_qubits)
-
-        # Verifica se uma rota específica foi fornecida
+        
+        # Determinar a rota
         if slice_path:
             self.logger.log(f"Usando rota específica para o transporte: {slice_path}")
-            # Substitui o método de transporte
-            success = self._transport_layer.run_transport_layer_eprs(client_id, server_id, num_qubits, route=slice_path)
+            route = slice_path
         else:
             self.logger.log(f"Calculando rota padrão para o transporte.")
-            # Substitui o método de transporte
-            success = self._transport_layer.run_transport_layer_eprs(client_id, server_id, num_qubits)
+            route = self._network.networklayer.short_route_valid(client_id, server_id)
+            if not route:
+                self.logger.log(f"Erro: Nenhuma rota encontrada entre {client_id} e {server_id}.")
+                return None
 
+        # Limpar pares EPRs residuais na rota
+        self.logger.log(f"Limpando pares EPRs residuais na rota: {route}")
+        for i in range(len(route) - 1):
+            u, v = route[i], route[i + 1]
+            self._physical_layer.remove_all_eprs_from_channel((u, v))
+            self.logger.log(f"Pares EPRs limpos no segmento {u} -> {v}.")
+
+        # Executar a transmissão usando a rota definida
+        success = self._transport_layer.run_transport_layer_eprs_bfk(client_id, server_id, num_qubits, route=route, scenario=scenario)
         if not success:
             self.logger.log(f"Falha ao transmitir qubits do cliente {client_id} para o servidor {server_id}.")
             return None
@@ -494,6 +419,7 @@ class ApplicationLayer:
 
         self.logger.log(f"Protocolo BFK concluído com sucesso. Resultados: {measurement_results}")
         return measurement_results
+
 
     def prepare_qubits(self, alice_id, num_qubits):
         qubits = []
@@ -544,7 +470,8 @@ class ApplicationLayer:
         server = self._network.get_host(bob_id)
         measurement_results = []
 
-        num_rounds = min(num_rounds, len(qubits))
+        if num_rounds != len(qubits):
+            num_rounds = len(qubits)
 
         for round_num in range(num_rounds):
             # Cliente escolhe um ângulo aleatório de medição
@@ -618,158 +545,3 @@ class ApplicationLayer:
             epr_count (int): Total de pares EPR utilizados.
         """
         self.used_eprs += epr_count  # Incrementa o contador de EPRs usados
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # def run_andrews_childs_protocol(self, alice_id, bob_id, num_qubits, slice_path=None):
-    #     """
-    #     Executa o protocolo Andrew Childs, onde Alice prepara qubits, envia para Bob, e Bob realiza operações.
-    #     """
-    #     alice = self._network.get_host(alice_id)
-    #     bob = self._network.get_host(bob_id)
-        
-    #     # Incrementa o timeslot antes de iniciar o protocolo
-    #     self._network.timeslot()
-    #     self.logger.log(f"Timeslot {self._network.get_timeslot()}: Iniciando protocolo Andrew Childs entre Alice {alice_id} e Bob {bob_id}.")
-
-    #     # Limpar memórias de Alice e Bob antes de começar
-    #     self.logger.log("Limpando a memória do cliente (Alice) antes de iniciar o protocolo.")
-    #     alice.memory.clear()
-    #     self.logger.log("Limpando a memória do servidor (Bob) antes de iniciar o protocolo.")
-    #     bob.memory.clear()
-    
-    #     # O cliente prepara qubits e armazena-os
-    #     qubits = [Qubit(qubit_id=random.randint(0, 1000)) for _ in range(num_qubits)]
-    #     self.logger.log(f"Cliente criou {len(qubits)} qubits para a transmissão.")
-
-    #     # Registrar qubits no dicionário de timeslots
-    #     for qubit in qubits:
-    #         self._network.qubit_timeslots[qubit.qubit_id] = {'timeslot': self._network.get_timeslot()}
-    #         self.logger.log(f"Qubit {qubit.qubit_id} registrado no timeslot {self._network.get_timeslot()}")
-
-    #     # Log dos qubits após criação
-    #     for qubit in qubits:
-    #         self.logger.log(f"Qubit {qubit.qubit_id} criado pelo Cliente - Estado: {qubit._qubit_state}, Fase: {qubit._phase}")
-
-    #     # Armazena os qubits criados na memória do cliente
-    #     existing_qubits_ids = {qubit.qubit_id for qubit in alice.memory}
-    #     new_qubits = [qubit for qubit in qubits if qubit.qubit_id not in existing_qubits_ids]
-    #     alice.memory.extend(new_qubits)
-    #     self.logger.log(f"Alice recebeu {len(new_qubits)} novos qubits. Total: {len(alice.memory)} qubits na memória.")
-
-    #     # Cria mensagem clássica com instruções
-    #     self._network.timeslot()
-    #     self.logger.log(f"Timeslot {self._network.get_timeslot()}.")
-    #     operations_classical_message = [self.generate_random_operation() for _ in qubits]
-    #     self.logger.log(f"Instruções clássicas enviadas pelo Cliente: {operations_classical_message}")
-
-    #     # Calcula a rota se não fornecida
-    #     if slice_path:
-    #         route = slice_path
-    #     else:
-    #         route = self._network.networklayer.short_route_valid(alice_id, bob_id)
-    #         if not route:
-    #             self.logger.log(f"Erro: Nenhuma rota encontrada entre {alice_id} e {bob_id}.")
-    #             return None
-
-    #     self.logger.log(f"Rota calculada para o transporte: {route}")
-
-    #     # Transporte de Alice para Bob
-    #     success = self._transport_layer.run_transport_layer_eprs(alice_id, bob_id, len(qubits), route=route)
-    #     if not success:
-    #         self.logger.log("Falha ao enviar os qubits para o servidor.")
-    #         return None
-
-    #     # Remove os qubits da memória do cliente após transporte
-    #     for qubit in qubits:
-    #         if qubit in alice.memory:
-    #             alice.memory.remove(qubit)
-
-    #     self.logger.log(f"Cliente enviou {len(qubits)} qubits para o Servidor.")
-    #     self.logger.log(f"Servidor tem {len(bob.memory)} qubits na memória após a recepção.")
-
-    #     # Servidor aplica operações
-    #     self._network.timeslot()
-    #     self.logger.log(f"Timeslot {self._network.get_timeslot()}.")
-    #     for qubit, operation in zip(qubits, operations_classical_message):
-    #         self.apply_operation_from_message(qubit, operation)
-    #     self.logger.log("Servidor aplicou as operações instruídas pelo Cliente nos qubits.")
-
-    #     for qubit in qubits:
-    #         self.logger.log(f"Qubit {qubit.qubit_id} após operações de Servidor - Estado: {qubit._qubit_state}, Fase: {qubit._phase}")
-
-    #     # Antes de devolver os qubits, verificar fidelidade da rota inversa
-    #     route_back = route[::-1]
-
-    #     # Limpa a mémoria do Cliente antes de devolver os qubits
-    #     self.logger.log(f"Limpando a memória do cliente antes de receber os qubits devolvidos.")
-    #     # alice.memory.clear()
-
-    #     # Agora tenta devolver os qubits
-    #     success = self._transport_layer.run_transport_layer_eprs(bob_id, alice_id, len(qubits), route=route_back)
-    #     if not success:
-    #         self.logger.log(f"Falha ao devolver os qubits para o cliente. O servidor tinha {len(qubits)} qubits.")
-    #         return None
-
-    #     # Antes de extender a memória, remova duplicatas
-    #     existing_qubits_ids = {qubit.qubit_id for qubit in alice.memory}
-
-    #     # Apenas adiciona qubits que ainda não estão na memória
-    #     new_qubits = [qubit for qubit in qubits if qubit.qubit_id not in existing_qubits_ids]
-    #     alice.memory.extend(new_qubits)
-
-    #     self.logger.log(f"Servidor devolveu {len(qubits)} qubits para o cliente.")
-
-    #     for qubit in qubits:
-    #         self.logger.log(f"Qubit {qubit.qubit_id} devolvido para o cliente - Estado: {qubit._qubit_state}, Fase: {qubit._phase}")
-
-    #     # Decodificação Clifford
-    #     self._network.timeslot()
-    #     self.logger.log(f"Timeslot {self._network.get_timeslot()}.")
-    #     for qubit, operation in zip(qubits, operations_classical_message):
-    #         self.apply_clifford_decoding(qubit, operation)
-    #         self.logger.log(f"Cliente aplicou a decodificação Clifford no qubit {qubit.qubit_id}.")
-
-    #     if len(alice.memory) == num_qubits:
-    #         self.logger.log(f"Protocolo concluído com sucesso. O cliente tem {len(alice.memory)} qubits decodificados.")
-    #     else:
-    #         self.logger.log(f"Erro: Cliente tem {len(alice.memory)} qubits, mas deveria ter {num_qubits} qubits.")
-    #         return None
-
-    #     return qubits
-    

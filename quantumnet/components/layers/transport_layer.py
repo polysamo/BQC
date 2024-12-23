@@ -338,7 +338,7 @@ class TransportLayer:
 
     def run_transport_layer_eprs(self, alice_id: int, bob_id: int, num_qubits: int, route=None, is_return=False, scenario=1):
         """
-        Executa a requisição de transmissão e o protocolo de teletransporte para diferentes cenários.
+        Executa a requisição de transmissão e o protocolo de teletransporte para protocolo Andrews Childs.
 
         args:
             alice_id : int : Id do host Alice.
@@ -374,7 +374,7 @@ class TransportLayer:
                 return False
         else:
             self.logger.log(f"Usando a rota fornecida: {route}")
-
+        
         # Lógica para Gerar Pares EPRs Baseada no Cenário
         if scenario == 1:
             if not is_return:
@@ -460,7 +460,7 @@ class TransportLayer:
         self._network.application_layer.record_route_fidelities(route_fidelities)
         self._network.application_layer.record_used_eprs(total_eprs_used)
         self.logger.log(f"Foram utilizados {total_eprs_used} pares EPRs ao longo da transmissão.")
-
+        
         # Log final dos EPRs restantes na rota
         self.logger.log("Estado final dos EPRs restantes na rota:")
         for i in range(len(route) - 1):
@@ -474,7 +474,28 @@ class TransportLayer:
             return True
         else:
             self.logger.log(f'Transmissão falhou. Apenas {success_count} qubits foram transmitidos com sucesso.')
+            self.register_failed_request(alice_id, bob_id, num_qubits, route, "Transmissão imcompleta")
             return False
+
+    def register_failed_request(self, alice_id, bob_id, num_qubits, route, reason):
+        """
+        Registra uma requisição que falhou diretamente no controlador.
+
+        Args:
+            alice_id (int): ID de Alice.
+            bob_id (int): ID de Bob.
+            num_qubits (int): Número de qubits envolvidos.
+            route (list): Rota utilizada ou None se nenhuma rota foi encontrada.
+        """
+        failed_request = {
+            "alice_id": alice_id,
+            "bob_id": bob_id,
+            "num_qubits": num_qubits,
+            "route": route,
+        }
+        if hasattr(self._network, 'controller') and self._network.controller:
+            self._network.controller.record_failed_request(failed_request)
+        self.logger.log(f"Falha registrada: {failed_request}")
 
     def calculate_average_fidelity(self, route):
         fidelities = []
@@ -495,259 +516,135 @@ class TransportLayer:
             return product
         return 0.0
 
+    def run_transport_layer_eprs_bfk(self, alice_id: int, bob_id: int, num_qubits: int, route=None, is_return=False, scenario=1):
+        """
+        Executa a requisição de transmissão e o protocolo de teletransporte para o protocolo BFK.
+        Args:
+            alice_id : int : Id do host Alice.
+            bob_id : int : Id do host Bob.
+            num_qubits : int : Número de qubits a serem transmitidos.
+            route : list : Rota a ser usada (opcional).
+            is_return : bool : Indica se é a etapa de retorno.
+            scenario : int : Define o cenário de simulação (1 ou 2).
 
+        Returns:
+            bool : True se a operação foi bem-sucedida, False caso contrário.
+        """
+        alice = self._network.get_host(alice_id)
+        bob = self._network.get_host(bob_id)
 
+        # Garantir qubits suficientes
+        if len(alice.memory) < num_qubits:
+            qubits_needed = num_qubits - len(alice.memory)
+            for _ in range(qubits_needed):
+                self._physical_layer.create_qubit(alice_id, increment_timeslot=False)
 
+        if len(alice.memory) != num_qubits:
+            self.logger.log(f"Timeslot {self._network.get_timeslot()} Erro: Alice tem {len(alice.memory)} qubits, mas deveria ter {num_qubits} qubits. Abortando transmissão.")
+            return False
 
+        # Calcular rota, se necessário
+        if route is None:
+            route = self._network_layer.short_route_valid(alice_id, bob_id, increment_timeslot=False)
+            if route is None:
+                self.logger.log(f"Timeslot {self._network.get_timeslot()} Não foi possível encontrar uma rota válida.")
+                return False
+        else:
+            self.logger.log(f"Timeslot {self._network.get_timeslot()} Usando a rota fornecida: {route}")
 
+        success_count = 0
+        total_eprs_used = 0
+        fidelidades_finais = []
 
+        # Cenário 2: Criar todos os pares EPRs no início
+        if scenario == 2 and not is_return:
+            self.logger.log(f"Timeslot {self._network.get_timeslot()} Iniciando criação de pares EPRs para o Cenário 2.")
+            for i in range(len(route) - 1):
+                u, v = route[i], route[i + 1]
+                for _ in range(num_qubits):
+                    epr_pair = self._physical_layer.create_epr_pair(fidelity=1.0, increment_timeslot=False)
+                    self._physical_layer.add_epr_to_channel(epr_pair, (u, v))
+                self.logger.log(f"Timeslot {self._network.get_timeslot()} Pares EPRs criados para o enlace {u} -> {v}.")
+            self.logger.log(f"Timeslot {self._network.get_timeslot()} Pares EPRs criados para toda a rota.")
 
-        
-    # def run_transport_layer_eprs(self, alice_id: int, bob_id: int, num_qubits: int, route=None, is_return=False,scenario=1):
-    #     """
-    #     Executa a requisição de transmissão e o protocolo de teletransporte.
+        while success_count < num_qubits:
+            # Cenário 1: Criar EPRs a cada transmissão
+            if scenario == 1:
+                self.logger.log(f"Timeslot {self._network.get_timeslot()} Iniciando criação de pares EPRs para o Cenário 1.")
+                for i in range(len(route) - 1):
+                    u, v = route[i], route[i + 1]
+                    epr_pair = self._physical_layer.create_epr_pair(fidelity=1.0, increment_timeslot=False)
+                    self._physical_layer.add_epr_to_channel(epr_pair, (u, v))
+                    self.logger.log(f"Timeslot {self._network.get_timeslot()} Par EPR criado e adicionado ao canal {u} -> {v}. Avançando timeslot...")
+                    self._network.timeslot()
 
-    #     args:
-    #         alice_id : int : Id do host Alice.
-    #         bob_id : int : Id do host Bob.
-    #         num_qubits : int : Número de qubits a serem transmitidos.
-    #         route : list : Rota a ser usada (opcional).
-    #         is_return : bool : Indica se é a etapa de retorno (evitar recriação de EPRs).
+            # Consumir EPRs da rota
+            for i in range(len(route) - 1):
+                node1 = route[i]
+                node2 = route[i + 1]
+                epr_pairs = self._network.get_eprs_from_edge(node1, node2)
+                if not epr_pairs:
+                    self.logger.log(f"Timeslot {self._network.get_timeslot()} Sem pares EPRs disponíveis no segmento {node1} -> {node2}. Interrompendo transmissão.")
+                    return False
 
-    #     returns:
-    #         bool : True se a operação foi bem-sucedida, False caso contrário.
-    #     """
-    #     alice = self._network.get_host(alice_id)
-    #     bob = self._network.get_host(bob_id)
-    #     available_qubits = len(alice.memory)
+                # Usar o primeiro EPR disponível e logar fidelidade
+                epr_pair = epr_pairs[0]
+                fidelity_epr = epr_pair.get_current_fidelity()
+                self.logger.log(f"Timeslot {self._network.get_timeslot()} EPR consumido no segmento {node1} -> {node2} com fidelidade {fidelity_epr:.4f}.")
+                total_eprs_used += 1
+                self._network.remove_epr(node1, node2)
 
-    #     # Garantir qubits suficientes
-    #     if available_qubits < num_qubits:
-    #         qubits_needed = num_qubits - available_qubits
-    #         for _ in range(qubits_needed):
-    #             self._physical_layer.create_qubit(alice_id, increment_timeslot=False)
-    #         available_qubits = len(alice.memory)
+            # Teletransportar um único qubit
+            if alice.memory:
+                self._network.timeslot()
+                qubit_alice = alice.memory.pop(0)
+                f_final = qubit_alice.get_current_fidelity()
+                qubit_alice.fidelity = f_final
+                bob.memory.append(qubit_alice)
 
-    #     if available_qubits != num_qubits:
-    #         self.logger.log(f'Erro: Alice tem {available_qubits} qubits, mas deveria ter {num_qubits} qubits. Abortando transmissão.')
-    #         return False
+                self.logger.log(f"Timeslot {self._network.get_timeslot()} Fidelidade final do teletransporte: {f_final:.4f}")
+                
+                # Verificar fidelidade final do qubit
+                if f_final < 0.85:
+                    self.logger.log(f"Timeslot {self._network.get_timeslot()} Fidelidade final {f_final:.2f} abaixo de 0.85. Interrompendo transmissão.")
+                    break
+                
+                success_count += 1
+                fidelidades_finais.append(f_final)
 
-    #     # Calcular rota, se necessário
-    #     if route is None:
-    #         route = self._network_layer.short_route_valid(alice_id, bob_id, increment_timeslot=False)
-    #         if route is None:
-    #             self.logger.log('Não foi possível encontrar uma rota válida.')
-    #             return False
-    #     else:
-    #         self.logger.log(f"Usando a rota fornecida: {route}")
+        # Registros e finalização
+        self._network.application_layer.record_route_fidelities(fidelidades_finais)
+        self._network.application_layer.record_used_eprs(total_eprs_used)
+        self.logger.log(f"Timeslot {self._network.get_timeslot()} Foram utilizados {total_eprs_used} pares EPRs ao longo da transmissão.")
 
-    #     # Criar múltiplos pares EPRs apenas na ida
-    #     if not is_return:
-    #         num_eprs_per_channel = num_qubits * 2  # Criar o triplo de pares EPRs
-    #         for i in range(len(route) - 1):
-    #             u, v = route[i], route[i + 1]
-    #             for _ in range(num_eprs_per_channel):
-    #                 epr_pair = self._physical_layer.create_epr_pair(fidelity=1.0, increment_timeslot=False, increment_eprs = False)
-    #                 self._physical_layer.add_epr_to_channel(epr_pair, (u, v))
-    #         self.logger.log(f'{num_eprs_per_channel} pares EPRs criados para cada segmento da rota {route}.')
-    #     else:
-    #         self.logger.log(f"Etapa de retorno: consumindo EPRs existentes na rota {route}.")
+        # Log final dos EPRs restantes na rota
+        self.logger.log("Pares EPRs restantes na rota:")
+        for i in range(len(route) - 1):
+            node1 = route[i]
+            node2 = route[i + 1]
+            remaining_eprs = len(self._network.get_eprs_from_edge(node1, node2))
+            self.logger.log(f"Timeslot {self._network.get_timeslot()} Segmento {node1} -> {node2}: {remaining_eprs} pares EPRs restantes.")
 
-    #     success_count = 0
-    #     total_eprs_used = 0
-    #     route_fidelities = []
+        if success_count == num_qubits:
+            self.logger.log(f"Timeslot {self._network.get_timeslot()} Transmissão de {num_qubits} qubits entre {alice_id} e {bob_id} concluída com sucesso.")
+            return True
+        else:
+            self.logger.log(f"Timeslot {self._network.get_timeslot()} Transmissão falhou. Apenas {success_count} qubits foram transmitidos com sucesso.")
+            self.register_failed_request(alice_id, bob_id, num_qubits, route, "Transmissão incompleta")
+            return False
 
-    #     while success_count < num_qubits:
-    #         # Verificar fidelidade da rota
-    #         f_route = self.calculate_average_fidelity(route)
-    #         self.logger.log(f"Fidelidade atual da rota: {f_route}")
-    #         if f_route < 0.85:
-    #             self.logger.log(f"Fidelidade da rota {f_route:.2f} abaixo de 0.85. Interrompendo transmissão.")
-    #             break
+    def clear_eprs_from_route(self, route: list):
+        """
+        Remove todos os pares EPRs restantes dos canais em uma rota.
 
-    #         # Consumir EPRs da rota
-    #         eprs_used_in_current_transmission = 0
-    #         for i in range(len(route) - 1):
-    #             node1 = route[i]
-    #             node2 = route[i + 1]
-    #             epr_pairs = self._network.get_eprs_from_edge(node1, node2)
-    #             if len(epr_pairs) == 0:
-    #                 self.logger.log(f"Sem pares EPRs disponíveis no segmento {node1} -> {node2}. Interrompendo transmissão.")
-    #                 return False
-
-    #             # Usar o primeiro EPR disponível
-    #             epr_pair = epr_pairs[0]
-    #             eprs_used_in_current_transmission += 1
-    #             total_eprs_used += 1
-    #             self._network.remove_epr(node1, node2)
-
-    #         # Log do estado atual dos EPRs na rota
-    #         for i in range(len(route) - 1):
-    #             node1 = route[i]
-    #             node2 = route[i + 1]
-    #             remaining_eprs = len(self._network.get_eprs_from_edge(node1, node2))
-    #             self.logger.log(f"Pares EPRs restantes no segmento {node1} -> {node2}: {remaining_eprs}")
-
-    #         # Teletransportar qubit
-    #         if alice.memory:
-    #             self._network.timeslot()
-    #             qubit_alice = alice.memory.pop(0)
-    #             f_qubit = qubit_alice.get_current_fidelity()
-    #             F_final = f_qubit * f_route
-    #             qubit_alice.fidelity = F_final
-    #             bob.memory.append(qubit_alice)
-
-    #             self.logger.log(f"Fidelidade final: {F_final:.4f} (F_qubit: {f_qubit:.4f} * F_rota: {f_route:.4f})")
-    #             success_count += 1
-    #             route_fidelities.append(F_final)
-
-    #     # Registros e finalização
-    #     self._network.application_layer.record_route_fidelities(route_fidelities)
-    #     self._network.application_layer.record_used_eprs(total_eprs_used)
-    #     self.logger.log(f"Foram utilizados {total_eprs_used} pares EPRs ao longo da transmissão.")
-
-    #     # Log final dos EPRs restantes na rota
-    #     self.logger.log("Estado final dos EPRs restantes na rota:")
-    #     for i in range(len(route) - 1):
-    #         node1 = route[i]
-    #         node2 = route[i + 1]
-    #         remaining_eprs = len(self._network.get_eprs_from_edge(node1, node2))
-    #         self.logger.log(f"Segmento {node1} -> {node2}: {remaining_eprs} pares EPRs restantes.")
-
-    #     if success_count == num_qubits:
-    #         self.logger.log(f'Transmissão de {num_qubits} qubits entre {alice_id} e {bob_id} concluída com sucesso.')
-    #         return True
-    #     else:
-    #         self.logger.log(f'Transmissão falhou. Apenas {success_count} qubits foram transmitidos com sucesso.')
-    #         return False
-        
-    # def run_transport_layer_eprs(self, alice_id: int, bob_id: int, num_qubits: int, route=None, is_return=False):
-    #     """
-    #     Executa a requisição de transmissão e o protocolo de teletransporte.
-
-    #     args:
-    #         alice_id : int : Id do host Alice.
-    #         bob_id : int : Id do host Bob.
-    #         num_qubits : int : Número de qubits a serem transmitidos.
-    #         route : list : Rota a ser usada (opcional).
-    #         is_return : bool : Indica se é a etapa de retorno (evitar recriação de EPRs).
-
-    #     returns:
-    #         bool : True se a operação foi bem-sucedida, False caso contrário.
-    #     """
-    #     alice = self._network.get_host(alice_id)
-    #     bob = self._network.get_host(bob_id)
-    #     available_qubits = len(alice.memory)
-
-    #     # Garantir qubits suficientes
-    #     if available_qubits < num_qubits:
-    #         qubits_needed = num_qubits - available_qubits
-    #         for _ in range(qubits_needed):
-    #             self._physical_layer.create_qubit(alice_id, increment_timeslot=False)
-    #         available_qubits = len(alice.memory)
-
-    #     if available_qubits != num_qubits:
-    #         self.logger.log(f'Erro: Alice tem {available_qubits} qubits, mas deveria ter {num_qubits} qubits. Abortando transmissão.')
-    #         return False
-
-    #     # Calcular rota, se necessário
-    #     if route is None:
-    #         route = self._network_layer.short_route_valid(alice_id, bob_id, increment_timeslot=False)
-    #         if route is None:
-    #             self.logger.log('Não foi possível encontrar uma rota válida.')
-    #             return False
-    #     else:
-    #         self.logger.log(f"Usando a rota fornecida: {route}")
-
-    #     # Criar mais pares EPRs
-    #     factor = 2  # Fator para criar múltiplos pares EPRs
-    #     num_eprs_per_channel = num_qubits * factor  # Aumentar o número de pares criados
-    #     if not is_return:
-    #         # Criar metade dos pares EPRs na ida
-    #         eprs_to_create = num_eprs_per_channel // 2
-    #         for i in range(len(route) - 1):
-    #             u, v = route[i], route[i + 1]
-    #             for _ in range(eprs_to_create):
-    #                 epr_pair = self._physical_layer.create_epr_pair(fidelity=1.0, increment_timeslot=False, increment_eprs=False)
-    #                 self._physical_layer.add_epr_to_channel(epr_pair, (u, v))
-    #         self.logger.log(f'{eprs_to_create} pares EPRs criados para cada segmento da rota {route}.')
-    #     else:
-    #         # Criar os EPRs restantes durante o retorno
-    #         eprs_to_create = num_eprs_per_channel - (num_eprs_per_channel // 2)
-    #         for i in range(len(route) - 1):
-    #             u, v = route[i], route[i + 1]
-    #             for _ in range(eprs_to_create):
-    #                 epr_pair = self._physical_layer.create_epr_pair(fidelity=1.0, increment_timeslot=False, increment_eprs=True)
-    #                 self._physical_layer.add_epr_to_channel(epr_pair, (u, v))
-    #         self.logger.log(f'{eprs_to_create} pares EPRs criados para cada segmento da rota {route} durante o retorno.')
-
-    #     success_count = 0
-    #     total_eprs_used = 0
-    #     route_fidelities = []
-
-    #     while success_count < num_qubits:
-    #         # Verificar fidelidade da rota
-    #         f_route = self.calculate_average_fidelity(route)
-    #         self.logger.log(f"Fidelidade atual da rota: {f_route}")
-    #         if f_route < 0.85:
-    #             self.logger.log(f"Fidelidade da rota {f_route:.2f} abaixo de 0.85. Interrompendo transmissão.")
-    #             break
-
-    #         # Consumir EPRs da rota
-    #         eprs_used_in_current_transmission = 0
-    #         for i in range(len(route) - 1):
-    #             node1 = route[i]
-    #             node2 = route[i + 1]
-    #             epr_pairs = self._network.get_eprs_from_edge(node1, node2)
-    #             if len(epr_pairs) == 0:
-    #                 self.logger.log(f"Sem pares EPRs disponíveis no segmento {node1} -> {node2}. Interrompendo transmissão.")
-    #                 return False
-
-    #             # Usar o primeiro EPR disponível
-    #             epr_pair = epr_pairs[0]
-    #             eprs_used_in_current_transmission += 1
-    #             total_eprs_used += 1
-    #             self._network.remove_epr(node1, node2)
-
-    #         # Log do estado atual dos EPRs na rota
-    #         for i in range(len(route) - 1):
-    #             node1 = route[i]
-    #             node2 = route[i + 1]
-    #             remaining_eprs = len(self._network.get_eprs_from_edge(node1, node2))
-    #             self.logger.log(f"Pares EPRs restantes no segmento {node1} -> {node2}: {remaining_eprs}")
-
-    #         # Teletransportar qubit
-    #         if alice.memory:
-    #             self._network.timeslot()
-    #             qubit_alice = alice.memory.pop(0)
-    #             f_qubit = qubit_alice.get_current_fidelity()
-    #             F_final = f_qubit * f_route
-    #             qubit_alice.fidelity = F_final
-    #             bob.memory.append(qubit_alice)
-
-    #             self.logger.log(f"Fidelidade final: {F_final:.4f} (F_qubit: {f_qubit:.4f} * F_rota: {f_route:.4f})")
-    #             success_count += 1
-    #             route_fidelities.append(F_final)
-
-    #     # Registros e finalização
-    #     self._network.application_layer.record_route_fidelities(route_fidelities)
-    #     self._network.application_layer.record_used_eprs(total_eprs_used)
-    #     self.logger.log(f"Foram utilizados {total_eprs_used} pares EPRs ao longo da transmissão.")
-
-    #     # Log final dos EPRs restantes na rota
-    #     self.logger.log("Estado final dos EPRs restantes na rota:")
-    #     for i in range(len(route) - 1):
-    #         node1 = route[i]
-    #         node2 = route[i + 1]
-    #         remaining_eprs = len(self._network.get_eprs_from_edge(node1, node2))
-    #         self.logger.log(f"Segmento {node1} -> {node2}: {remaining_eprs} pares EPRs restantes.")
-
-    #     if success_count == num_qubits:
-    #         self.logger.log(f'Transmissão de {num_qubits} qubits entre {alice_id} e {bob_id} concluída com sucesso.')
-    #         return True
-    #     else:
-    #         self.logger.log(f'Transmissão falhou. Apenas {success_count} qubits foram transmitidos com sucesso.')
-    #         return False
+        Args:
+            route (list): Lista de nós representando a rota.
+        """
+        for i in range(len(route) - 1):
+            u, v = route[i], route[i + 1]
+            channel = (u, v)
+            self._physical_layer.remove_all_eprs_from_channel(channel)
+            self.logger.log(f"Todos os pares EPRs removidos do canal {u} -> {v}.")
 
 
 
