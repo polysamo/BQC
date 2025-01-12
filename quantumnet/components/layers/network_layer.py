@@ -17,24 +17,37 @@ class NetworkLayer:
         self._physical_layer = physical_layer
         self._link_layer = link_layer
         self.logger = Logger.get_instance()
-        self.avg_size_routes = 0  # Inicializa o tamanho médio das rotas
-        self.used_eprs = 0  # Inicializa o contador de EPRs utilizados
-        self.used_qubits = 0  # Inicializa o contador de Qubits utilizados
-        self.routes_used = {}  # Inicializa o dicionário de rotas usadas 
-        
+        self.avg_size_routes = 0  
+        self.used_eprs = 0  
+        self.used_qubits = 0  
+        self.routes_used = {}  
+
     def __str__(self):
-        """ Retorna a representação em string da camada de rede. 
+        """ 
+        Retorna a representação em string da camada de rede. 
         
-        returns:
-            str : Representação em string da camada de rede."""
+        Returns:
+            str : Representação em string da camada de rede.
+        """
         return 'Network Layer'
 
     def get_used_eprs(self):
-        """Retorna a contagem de EPRs utilizados na camada de rede."""
+        """
+        Retorna a lista de pares EPRs usados na camada de rede.
+
+        Returns:
+            list: Lista de pares EPRs usados.
+        """
         self.logger.debug(f"Eprs usados na camada {self.__class__.__name__}: {self.used_eprs}")
         return self.used_eprs
     
     def get_used_qubits(self):
+        """
+        Retorna a lista de qubits usados na camada de rede.
+
+        Returns:
+            list: Lista de qubits usados.
+        """
         self.logger.debug(f"Qubits usados na camada {self.__class__.__name__}: {self.used_qubits}")
         return self.used_qubits
 
@@ -91,7 +104,6 @@ class NetworkLayer:
         return None
 
 
-
     def entanglement_swapping(self, Alice: int = None, Bob: int = None) -> bool:
         """
         Realiza o Entanglement Swapping em toda a rota determinada pelo short_route_valid.
@@ -121,9 +133,9 @@ class NetworkLayer:
             self._network.timeslot()
             self.logger.log(f'Timeslot {self._network.get_timeslot()}: Realizando Entanglement Swapping.')
 
-            node1 = route[0]    # Primeiro nó na rota
-            node2 = route[1]    # Segundo nó na rota
-            node3 = route[2] if len(route) > 2 else None  # Terceiro nó na rota (se existir)
+            node1 = route[0]    
+            node2 = route[1]    
+            node3 = route[2] if len(route) > 2 else None  
 
             # Verifica se existe um canal entre node1 e node2
             if not self._network.graph.has_edge(node1, node2):
@@ -175,6 +187,7 @@ class NetworkLayer:
 
                 # Adiciona o par EPR virtual ao canal entre node1 e node3
                 self._network.physical.add_epr_to_channel(epr_virtual, (node1, node3))
+
                 # Remove os pares EPR antigos dos canais entre node1-node2 e node2-node3
                 self._network.physical.remove_epr_from_channel(epr1, (node1, node2))
                 self._network.physical.remove_epr_from_channel(epr2, (node2, node3))
@@ -204,9 +217,9 @@ class NetworkLayer:
         
         # Itera sobre as rotas armazenadas no dicionário
         for route in self.routes_used.values():
-            total_size += len(route) - 1  # Soma o número de arestas (saltos), que é o número de nós menos 1
-            num_routes += 1  # Conta o número de rotas
-        
+            total_size += len(route) - 1  
+            num_routes += 1  
+
         # Calcula a média, se houver rotas válidas
         if num_routes > 0:
             self.avg_size_routes = total_size / num_routes

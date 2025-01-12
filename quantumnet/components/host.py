@@ -18,6 +18,8 @@ class Host():
         # Sobre a execução
         self.logger = Logger.get_instance()
         self._routing_table = None
+    
+    
     def __str__(self):
         return f'{self.host_id}'
     
@@ -134,33 +136,81 @@ class Host():
 
 class ServerNode(Host):
     def __init__(self, host_id: int, **kwargs):
+        """
+        Inicializa um nó servidor.
+
+        Args:
+            host_id (int): ID único do nó servidor.
+            **kwargs: Parâmetros adicionais para a classe base `Host`.
+        """
         super().__init__(host_id, **kwargs)
         self.role = 'server'
 
     def process_request(self):
-        """Processa a requisição do cliente."""
+        """
+        Processa a requisição de um cliente.
+
+        """
         print(f"Servidor {self.host_id} processando a requisição.")
 
     def color(self):
-        return 'green'  # Cor do servidor
+        """
+        Retorna a cor associada ao nó servidor.
+
+        Returns:
+            str: A cor 'green'.
+        """
+        return 'green'  
 
 class ClientNode(Host):
     def __init__(self, host_id: int, **kwargs):
+        """
+        Inicializa um nó cliente.
+
+        Args:
+            host_id (int): ID único do nó cliente.
+            **kwargs: Parâmetros adicionais para a classe base `Host`.
+        """
         super().__init__(host_id, **kwargs)
         self.role = 'client'
 
     def send_request(self, server_id):
-        """Envia requisição ao servidor."""
+        """
+        Envia uma requisição para o servidor especificado.
+
+        Args:
+            server_id (int): ID do servidor para o qual a requisição será enviada.
+        """
         print(f"Cliente {self.host_id} enviando requisição para o servidor {server_id}.")
 
     def color(self):
+        """
+        Retorna a cor associada ao nó cliente.
+
+        Returns:
+            str: A cor 'red'.
+        """
         return 'red'  # Cor do cliente
 
 class RegularNode(Host):
+
     def __init__(self, host_id: int, **kwargs):
+        """
+        Inicializa um nó regular.
+
+        Args:
+            host_id (int): ID único do nó regular.
+            **kwargs: Parâmetros adicionais para a classe base `Host`.
+        """
         super().__init__(host_id, **kwargs)
         self.role = 'regular'
     
     def color(self):
+        """
+        Retorna a cor associada ao nó regular.
+
+        Returns:
+            str: A cor hexadecimal '#1f78b8'.
+        """
         return '#1f78b8'  # Cor do nó normal
     

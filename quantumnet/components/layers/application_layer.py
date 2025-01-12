@@ -33,27 +33,39 @@ class ApplicationLayer:
         return 'Application Layer'
     
     def get_used_qubits(self):
+        """
+        Retorna a lista de pares EPRs usados na camada de aplicação.
+
+        Returns:
+            list: Lista de pares EPRs usados.
+        """
         self.logger.debug(f"Qubits usados na camada {self.__class__.__name__}: {self.used_qubits}")
         return self.used_qubits
     
     def get_used_eprs(self):
+        """
+        Retorna a lista de pares EPRs usados na camada de aplicação.
+
+        Returns:
+            list: Lista de pares EPRs usados.
+        """
         self.logger.debug(f"Eprs usados na camada {self.__class__.__name__}: {self.used_eprs}")
         return self.used_eprs
     
     def run_app(self, app_name, alice_id, bob_id, **kwargs):
         num_qubits = kwargs.get('num_qubits', 10)
-        num_rounds = kwargs.get('num_rounds', 10)
-        slice_path = kwargs.get('slice_path', None)  # Extrai o slice_path de kwargs se existir
+        num_rounds = kwargs.get('num_rounds', None)
+        slice_path = kwargs.get('slice_path', None)  
         scenario = kwargs.get('scenario',None)
+        circuit_depth = kwargs.get('circuit_depth', None) 
+
 
         if app_name == "QKD_E91":
             return self.qkd_e91_protocol(alice_id, bob_id, num_qubits)
         elif app_name == "AC_BQC":
-            # Passa o cenário para o protocolo Andrew Childs
-            return self.run_andrews_childs_protocol(alice_id, bob_id, num_qubits, slice_path=slice_path, scenario=scenario)
+            return self.run_andrews_childs_protocol(alice_id, bob_id, num_qubits, slice_path=slice_path, scenario=scenario,circuit_depth=circuit_depth)
         elif app_name == "BFK_BQC":
-            # Também passamos slice_path aqui
-            return self.bfk_protocol(alice_id, bob_id, num_qubits, num_rounds, slice_path=slice_path, scenario=scenario)
+            return self.bfk_protocol(alice_id, bob_id, num_qubits, num_rounds, slice_path=slice_path, scenario=scenario,circuit_depth=circuit_depth)
         else:
             self.logger.log("Aplicação não realizada ou não encontrada.")
             return False
@@ -82,35 +94,34 @@ class ApplicationLayer:
             self.used_qubits += num_qubits
             self.logger.log(f'Iniciando protocolo E91 com {num_qubits} qubits.')
 
-            # Etapa 1: Alice prepara os qubits
+            # Alice prepara os qubits
             key = [random.choice([0, 1]) for _ in range(num_qubits)]  # Gera uma chave aleatória de bits
             bases_alice = [random.choice([0, 1]) for _ in range(num_qubits)]  # Gera bases de medição aleatórias para Alice
             qubits = self.prepare_e91_qubits(key, bases_alice)  # Prepara os qubits com base na chave e nas bases
             self.logger.log(f'Qubits preparados com a chave: {key} e bases: {bases_alice}')
 
-            # Etapa 2: Transmissão dos qubits de Alice para Bob
+            # Transmissão dos qubits de Alice para Bob
             success = self._transport_layer.run_transport_layer(alice_id, bob_id, num_qubits)
             if not success:
                 self.logger.log(f'Falha na transmissão dos qubits de Alice para Bob.')
                 return None
 
-            self._network.timeslot()  # Incrementa o timeslot após a transmissão
             self.logger.debug(f"Timeslot incrementado após transmissão: {self._network.get_timeslot()}")
 
-            # Etapa 3: Bob escolhe bases aleatórias e mede os qubits
+            # Bob escolhe bases aleatórias e mede os qubits
             bases_bob = [random.choice([0, 1]) for _ in range(num_qubits)]  # Gera bases de medição aleatórias para Bob
             results_bob = self.apply_bases_and_measure_e91(qubits, bases_bob)  # Bob mede os qubits usando suas bases
             self.logger.log(f'Resultados das medições: {results_bob} com bases: {bases_bob}')
 
-            # Etapa 4: Alice e Bob compartilham suas bases e encontram os índices comuns
+            # Alice e Bob compartilham suas bases e encontram os índices comuns
             common_indices = [i for i in range(len(bases_alice)) if bases_alice[i] == bases_bob[i]]  # Índices onde as bases coincidem
             self.logger.log(f'Índices comuns: {common_indices}')
 
-            # Etapa 5: Extração da chave com base nos índices comuns
+            # Extração da chave com base nos índices comuns
             shared_key_alice = [key[i] for i in common_indices]  # Chave compartilhada gerada por Alice
             shared_key_bob = [results_bob[i] for i in common_indices]  # Chave compartilhada gerada por Bob
 
-            # Etapa 6: Verificação se as chaves coincidem
+            # Verificação se as chaves coincidem
             for a, b in zip(shared_key_alice, shared_key_bob):
                 if a == b and len(final_key) < num_bits:  # Limita o tamanho da chave final
                     final_key.append(a)
@@ -118,7 +129,7 @@ class ApplicationLayer:
             self.logger.log(f"Chaves obtidas até agora: {final_key}")
 
             if len(final_key) >= num_bits:
-                final_key = final_key[:num_bits]  # Garante que a chave final tenha o tamanho exato solicitado
+                final_key = final_key[:num_bits] 
                 self.logger.log(f"Protocolo E91 bem-sucedido. Chave final compartilhada: {final_key}")
                 return final_key
 
@@ -135,7 +146,6 @@ class ApplicationLayer:
         Returns:
             list: Lista de qubits preparados.
         """
-        self._network.timeslot()  # Incrementa o timeslot
         self.logger.debug(f"Timeslot incrementado na função prepare_e91_qubits: {self._network.get_timeslot()}")
         qubits = []
         for bit, base in zip(key, bases):
@@ -159,19 +169,18 @@ class ApplicationLayer:
         Returns:
             list: Resultados das medições.
         """
-        self._network.timeslot()  # Incrementa o timeslot
         self.logger.debug(f"Timeslot incrementado na função apply_bases_and_measure_e91: {self._network.get_timeslot()}")
         results = []
         for qubit, base in zip(qubits, bases):
             if base == 1:
                 qubit.apply_hadamard()  # Aplica a porta Hadamard antes de medir, se a base for 1
-            measurement = qubit.measure()  # Mede o qubit
+            measurement = qubit.measure()  
             results.append(measurement)  # Adiciona o resultado da medição à lista de resultados
         return results
     
     #PROTOCOLO ANDREWS CHILDS - BQC
 
-    def run_andrews_childs_protocol(self, alice_id, bob_id, num_qubits, slice_path=None, scenario=1):
+    def run_andrews_childs_protocol(self, alice_id, bob_id, num_qubits, circuit_depth=None, slice_path=None, scenario=1):
         """
         Executa o protocolo Andrew Childs, onde Alice prepara qubits, envia para Bob, e Bob realiza operações.
 
@@ -184,9 +193,10 @@ class ApplicationLayer:
         """
         alice = self._network.get_host(alice_id)
         bob = self._network.get_host(bob_id)
+        
+        if circuit_depth is None:
+            raise ValueError("Erro: 'circuit_depth' não foi fornecido ou está inválido.")
 
-        # Incrementa o timeslot antes de iniciar o protocolo
-        self._network.timeslot()
         self.logger.log(f"Timeslot {self._network.get_timeslot()}: Iniciando protocolo Andrew Childs entre Alice {alice_id} e Bob {bob_id}.")
         
         # Limpar memórias de Alice e Bob antes de começar
@@ -213,7 +223,6 @@ class ApplicationLayer:
         self.logger.log(f"Alice recebeu {len(qubits)} qubits. Total: {len(alice.memory)} qubits na memória.")
 
         # Cria mensagem clássica com instruções
-        self._network.timeslot()
         operations_classical_message = [self.generate_random_operation() for _ in qubits]
         self.logger.log(f"Instruções clássicas enviadas pelo Cliente: {operations_classical_message}")
 
@@ -243,7 +252,13 @@ class ApplicationLayer:
         self.logger.log(f"Servidor tem {len(bob.memory)} qubits na memória após a recepção.")
 
         # Servidor aplica operações
-        self._network.timeslot()
+        tempo_de_operacao = circuit_depth
+        print(f"Tempo de Operação: {tempo_de_operacao}")
+
+        for _ in range(tempo_de_operacao):
+            self._network.timeslot()
+            self.logger.log(f"Timeslot {self._network.get_timeslot()}: Servidor aplicando operações nos qubits.")
+        
         for qubit, operation in zip(qubits, operations_classical_message):
             self.apply_operation_from_message(qubit, operation)
         self.logger.log("Servidor aplicou as operações instruídas pelo Cliente nos qubits.")
@@ -274,7 +289,6 @@ class ApplicationLayer:
             self.logger.log(f"Qubit {qubit.qubit_id} devolvido para o cliente - Estado: {qubit._qubit_state}, Fase: {qubit._phase}")
 
         # Decodificação Clifford
-        self._network.timeslot()
         for qubit, operation in zip(qubits, operations_classical_message):
             self.apply_clifford_decoding(qubit, operation)
             self.logger.log(f"Cliente aplicou a decodificação Clifford no qubit {qubit.qubit_id}.")
@@ -285,15 +299,9 @@ class ApplicationLayer:
         else:
             self.logger.log(f"Erro: Cliente tem {len(alice.memory)} qubits, mas deveria ter {num_qubits} qubits.")
             return None
-        
-        # # Limpar pares EPRs residuais após a conclusão do protocolo
-        # self.logger.log(f"Timeslot {self._network.get_timeslot()}: Limpando pares EPRs residuais após a conclusão da requisição.")
-        # for i in range(len(route) - 1):
-        #     u, v = route[i], route[i + 1]
-        #     self._physical_layer.remove_all_eprs_from_channel((u, v))
-        #     self.logger.log(f"Pares EPRs limpos no segmento {u} -> {v}.")
 
         return qubits
+
 
 
     def generate_random_operation(self):
@@ -338,7 +346,7 @@ class ApplicationLayer:
 
     # PROTOCOLO BFK - BQC
 
-    def bfk_protocol(self, client_id, server_id, num_qubits, num_rounds, slice_path=None, scenario=1):
+    def bfk_protocol(self, client_id, server_id, num_qubits, num_rounds, circuit_depth=None, slice_path=None, scenario=1):
         """
         Executa o protocolo BFK completo: cliente prepara qubits, servidor cria brickwork e cliente envia instruções.
         
@@ -354,8 +362,12 @@ class ApplicationLayer:
             list: Resultados finais das medições realizadas pelo servidor.
         """
         if num_rounds is None:
-            num_rounds = num_qubits
+            num_rounds = circuit_depth if circuit_depth is not None else num_qubits
 
+        self.logger.log(f"Protocolo configurado para {num_rounds} rodadas.")
+
+        print(f"Tempo de Operação: {circuit_depth}")
+        
         self._network.timeslot()
         self.logger.log(f"Timeslot {self._network.get_timeslot()}. Iniciando protocolo BFK com {num_qubits} qubits, {num_rounds} rodadas, e cenário {scenario}.")
 
@@ -415,14 +427,29 @@ class ApplicationLayer:
             return None
 
         # Cliente instrui o servidor a medir os qubits em cada rodada
-        measurement_results = self.run_computation(client_id, server_id, num_rounds, qubits)
+        results = self.run_computation(client_id, server_id, num_rounds, qubits)
 
-        self.logger.log(f"Protocolo BFK concluído com sucesso. Resultados: {measurement_results}")
-        return measurement_results
+        self.logger.log(f"Protocolo BFK concluído com sucesso. Resultados: {results}")
+        return results
 
 
     def prepare_qubits(self, alice_id, num_qubits):
+        """
+        Prepara uma lista de qubits para o cliente especificado.
+
+        Args:
+            alice_id (int): ID do cliente que está preparando os qubits.
+            num_qubits (int): Número de qubits que devem ser preparados.
+
+        Returns:
+            list: Lista de objetos Qubit preparados.
+
+        Raises:
+            AssertionError: Se o número de qubits preparados não corresponder ao valor esperado.
+        """
         qubits = []
+
+        # Loop para criar e preparar os qubits.
         for _ in range(num_qubits):
             r_j = random.choice([0, 1])  # Cliente gera um bit aleatório r_j
             qubit = Qubit(qubit_id=random.randint(0, 1000))  # Cria um qubit com ID aleatório
@@ -432,10 +459,11 @@ class ApplicationLayer:
             self.logger.log(f"Qubit {qubit.qubit_id} preparado pelo cliente {alice_id}.")
         assert len(qubits) == num_qubits, "Número de qubits preparados não corresponde ao esperado."
         return qubits
+    
 
     def create_brickwork_state(self, bob_id, qubits):
         """
-        O servidor cria o estado de brickwork (tijolo) utilizando os qubits recebidos.
+        O servidor cria o estado de brickwork utilizando os qubits recebidos.
 
         Args:
             bob_id (int): ID do servidor que cria o estado.
@@ -445,6 +473,7 @@ class ApplicationLayer:
             bool: True se o estado de brickwork foi criado com sucesso, False caso contrário.
         """
         server = self._network.get_host(bob_id)
+
         # Aplica a fase controlada nos qubits para criar o estado de brickwork
         for i in range(len(qubits) - 1):
             control_qubit = qubits[i]  # Qubit de controle
@@ -453,9 +482,10 @@ class ApplicationLayer:
         self.logger.log(f"Servidor {bob_id} criou um estado de brickwork com {len(qubits)} qubits.")
         return True
 
+    
     def run_computation(self, alice_id, bob_id, num_rounds, qubits):
         """
-        Cliente instrui o servidor a realizar medições nos qubits durante as rodadas de computação.
+        Cliente instrui o servidor a realizar medições em todos os qubits durante as rodadas de computação.
 
         Args:
             alice_id (int): ID do cliente que fornece instruções.
@@ -464,34 +494,38 @@ class ApplicationLayer:
             qubits (list): Lista de qubits a serem medidos.
 
         Returns:
-            list: Resultados das medições realizadas pelo servidor em cada rodada.
+            list: Resultados das medições realizadas pelo servidor em todas as rodadas.
         """
         client = self._network.get_host(alice_id)
         server = self._network.get_host(bob_id)
         measurement_results = []
 
-        if num_rounds != len(qubits):
-            num_rounds = len(qubits)
+        # Inicializa os ângulos de medição para todos os qubits
+        angles = [random.uniform(0, 2 * math.pi) for _ in qubits]
+        self.logger.log(f"Cliente {alice_id} inicializou ângulos de medição: {angles}")
 
+        # Executa as rodadas de computação
         for round_num in range(num_rounds):
-            # Cliente escolhe um ângulo aleatório de medição
-            theta = random.uniform(0, 2 * math.pi)
-            self.logger.log(f"Rodada {round_num + 1}: Cliente {alice_id} envia ângulo de medição {theta} ao servidor.")
-            
-            # Servidor mede o qubit na base fornecida pelo ângulo
-            self._network.timeslot()
-            self.logger.log(f"Timeslot {self._network.get_timeslot()}.Servidor realiza a medição do qubit.")
-            qubit = qubits[round_num]
-            result = qubit.measure_in_basis(theta)
-            measurement_results.append(result)
-            self.logger.log(f"Servidor {bob_id} realizou a medição do qubit na base {theta}, com resultado {result}.")
+            round_results = []
 
-            # Cliente ajusta a próxima base de medição de acordo com o resultado
-            self._network.timeslot()
-            self.logger.log(f"Timeslot {self._network.get_timeslot()}.Cliente ajusta a próxima base de medição.")
-            adjusted_theta = self.adjust_measurement_basis(theta, result)
-            self.logger.log(f"Cliente {alice_id} ajustou a próxima base de medição para {adjusted_theta}.")
+            # Medição de todos os qubits na rodada atual
+            for i, qubit in enumerate(qubits):
+                theta = angles[i]
+                self.logger.log(f"Rodada {round_num + 1}: Cliente {alice_id} instrui o servidor a medir o qubit {qubit.qubit_id} na base {theta}.")
+                
+                # Servidor realiza a medição
+                self._network.timeslot()
+                result = qubit.measure_in_basis(theta)
+                round_results.append(result)
+                self.logger.log(f"Servidor {bob_id} mediu o qubit {qubit.qubit_id} na base {theta}, resultado: {result}.")
 
+                # Cliente ajusta o ângulo para o próximo ciclo
+                angles[i] = self.adjust_measurement_basis(theta, result)
+
+            measurement_results.append(round_results)
+            self.logger.log(f"Resultados da rodada {round_num + 1}: {round_results}")
+
+        self.logger.log(f"Todas as rodadas concluídas. Resultados finais: {measurement_results[-1]}")
         return measurement_results
 
     def adjust_measurement_basis(self, theta, result):
@@ -514,13 +548,27 @@ class ApplicationLayer:
     # MÉTRICAS 
     
     def record_route_fidelities(self, fidelities):
+        """
+        Registra as fidelidades das rotas na camada de aplicação.
+
+        Args:
+            fidelities (list): Lista de valores de fidelidade a serem registrados.
+        """
         self.route_fidelities.extend(fidelities)
 
     def avg_fidelity_on_applicationlayer(self):
+        """
+        Calcula a média das fidelidades registradas na camada de aplicação.
+
+        Returns:
+            float: A média das fidelidades registradas ou 0.0 se a lista estiver vazia.
+        """
+        # Verifica se há fidelidades registradas.
         if not self.route_fidelities:
             print("Nenhuma fidelidade foi registrada.")
             return 0.0
 
+        # Calcula a média das fidelidades registradas.
         avg_fidelity = sum(self.route_fidelities) / len(self.route_fidelities)
         print(f"A média das fidelidades das rotas é: {avg_fidelity:.4f}")
         return avg_fidelity

@@ -17,7 +17,7 @@ class PhysicalLayer:
         self._network = network
         self._qubits = []
         self._failed_eprs = []
-        self.created_eprs = []  # Lista para armazenar todos os EPRs criados
+        self.created_eprs = [] 
         self._initial_qubits_fidelity = random.uniform(self.min_prob, self.max_prob)
         self._count_qubit = 0
         self._count_epr = 0
@@ -63,10 +63,22 @@ class PhysicalLayer:
     
     
     def get_used_eprs(self):
+        """
+        Retorna a lista de pares EPRs usados na camada física.
+
+        Returns:
+            list: Lista de pares EPRs usados.
+        """
         self.logger.debug(f"Eprs criados na camada {self.__class__.__name__}: {self.used_eprs}")
         return self.used_eprs
     
     def get_used_qubits(self):
+        """
+        Retorna a lista de qubits usados na camada física.
+
+        Returns:
+            list: Lista de qubits usados.
+        """
         self.logger.debug(f"Qubits usados na camada {self.__class__.__name__}: {self.used_qubits}")
         return self.used_qubits
     
@@ -89,10 +101,9 @@ class PhysicalLayer:
         qubit_id = self._count_qubit
         qubit = Qubit(qubit_id)
 
-        # Define a fidelidade inicial do qubit entre 0.95 e 1.0
         initial_fidelity = uniform(min_fidelity, 1.0)
-        qubit.fidelity = initial_fidelity  # Atribuição direta da fidelidade inicial
-        qubit.current_fidelity = initial_fidelity  # Caso precise manter um histórico de fidelidade
+        qubit.fidelity = initial_fidelity  
+        qubit.current_fidelity = initial_fidelity  
 
         self._network.hosts[host_id].add_qubit(qubit)
         
@@ -104,7 +115,8 @@ class PhysicalLayer:
 
 
     def create_epr_pair(self, fidelity: float = 1.0, increment_timeslot: bool = True, increment_eprs: bool = False):
-        """Cria um par de qubits entrelaçados.
+        """
+        Cria um par de qubits entrelaçados.
 
         Returns:
             Qubit, Qubit: Par de qubits entrelaçados.
@@ -121,7 +133,8 @@ class PhysicalLayer:
         return epr
 
     def add_epr_to_channel(self, epr: Epr, channel: tuple):
-        """Adiciona um par EPR ao canal.
+        """
+        Adiciona um par EPR ao canal.
 
         Args:
             epr (Epr): Par EPR.
@@ -134,7 +147,8 @@ class PhysicalLayer:
         self.logger.debug(f'Par EPR {epr} adicionado ao canal {channel}.')
 
     def remove_epr_from_channel(self, epr: Epr, channel: tuple):
-        """Remove um par EPR do canal.
+        """
+        Remove um par EPR do canal.
 
         Args:
             epr (Epr): Par EPR a ser removido.
@@ -146,23 +160,29 @@ class PhysicalLayer:
             return
         try:
             self._network.graph.edges[u, v]['eprs'].remove(epr)
-            # self.logger.debug(f'Par EPR {epr} removido do canal {channel}.')
         except ValueError:
             self.logger.debug(f'Par EPR {epr} não encontrado no canal {channel}.')
     
     def remove_all_eprs_from_channel(self, channel: tuple):
-        """Remove todos os pares EPR do canal especificado."""
+        """
+        Remove todos os pares EPR do canal especificado.
+
+        Args:
+            channel (tuple): Uma tupla (u, v) que representa o canal entre dois nós da rede.
+
+        """
         u, v = channel
         if not self._network.graph.has_edge(u, v):
             self.logger.debug(f'Canal {channel} não existe.')
             return
-        # Copia a lista de EPRs
+      
         eprs_copy = list(self._network.graph.edges[u, v].get('eprs', []))
         for epr in eprs_copy:
             self.remove_epr_from_channel(epr, channel)
 
     def fidelity_measurement_only_one(self, qubit: Qubit):
-        """Mede a fidelidade de um qubit.
+        """
+        Mede a fidelidade de um qubit.
 
         Args:
             qubit (Qubit): Qubit.
@@ -170,12 +190,11 @@ class PhysicalLayer:
         Returns:
             float: Fidelidade do qubit.
         """
-        fidelity = qubit.get_current_fidelity()  # Inicializa a variável 'fidelity' no início
-        
+        fidelity = qubit.get_current_fidelity()  
+
         if self._network.get_timeslot() > 0:
-            # Aplica um fator de decoerência (0.99 neste exemplo)
             new_fidelity = max(0, fidelity * 0.99)  
-            qubit.set_current_fidelity(new_fidelity)  # Atualiza a fidelidade do qubit
+            qubit.set_current_fidelity(new_fidelity)  
             self.logger.log(f'A fidelidade do qubit {qubit} é {new_fidelity}')
             return new_fidelity
 
@@ -183,7 +202,16 @@ class PhysicalLayer:
         return fidelity
 
     def fidelity_measurement(self, qubit1: Qubit, qubit2: Qubit):
-        """Mede e aplica a decoerência em dois qubits, e loga o resultado."""
+        """
+        Mede a fidelidade de dois qubits, aplica efeitos de decoerência, e registra o resultado.
+
+        Args:
+            qubit1 (Qubit): O primeiro qubit para a medição de fidelidade.
+            qubit2 (Qubit): O segundo qubit para a medição de fidelidade.
+
+        Returns:
+            float: A fidelidade combinada dos dois qubits após a medição.
+        """
         fidelity1 = self.fidelity_measurement_only_one(qubit1)
         fidelity2 = self.fidelity_measurement_only_one(qubit2)
         combined_fidelity = fidelity1 * fidelity2
@@ -191,12 +219,13 @@ class PhysicalLayer:
         return combined_fidelity
     
     def entanglement_creation_heralding_protocol(self, alice: Host, bob: Host):
-        """Protocolo de criação de emaranhamento com sinalização.
+        """
+        Protocolo de criação de emaranhamento com sinalização.
 
         Returns:
             bool: True se o protocolo foi bem sucedido, False caso contrário.
         """
-        self._network.timeslot() # Incrementa o timeslot
+        self._network.timeslot() 
         self.used_qubits += 2
 
         qubit1 = alice.get_last_qubit()
@@ -228,7 +257,8 @@ class PhysicalLayer:
             return False
 
     def echp_on_demand(self, alice_host_id: int, bob_host_id: int):
-        """Protocolo para a recriação de um entrelaçamento entre os qubits de acordo com a probabilidade de sucesso de demanda do par EPR criado.
+        """
+        Protocolo para a recriação de um entrelaçamento entre os qubits de acordo com a probabilidade de sucesso de demanda do par EPR criado.
 
         Args: 
             alice_host_id (int): ID do Host de Alice.
@@ -237,7 +267,7 @@ class PhysicalLayer:
         Returns:
             bool: True se o protocolo foi bem sucedido, False caso contrário.
         """
-        self._network.timeslot()  # Incrementa o timeslot
+        self._network.timeslot()  
         self.used_qubits += 2
 
         qubit1 = self._network.hosts[alice_host_id].get_last_qubit()
@@ -259,7 +289,8 @@ class PhysicalLayer:
         return False
 
     def echp_on_replay(self, alice_host_id: int, bob_host_id: int):
-        """Protocolo para a recriação de um entrelaçamento entre os qubits de que já estavam perdendo suas características.
+        """
+        Protocolo para a recriação de um entrelaçamento entre os qubits de que já estavam perdendo suas características.
 
         Args: 
             alice_host_id (int): ID do Host de Alice.
@@ -268,7 +299,7 @@ class PhysicalLayer:
         Returns:
             bool: True se o protocolo foi bem sucedido, False caso contrário.
         """
-        self._network.timeslot()  # Incrementa o timeslot
+        self._network.timeslot() 
         self.used_qubits += 2
         
         qubit1 = self._network.hosts[alice_host_id].get_last_qubit()

@@ -38,10 +38,22 @@ class LinkLayer:
         return 'Link Layer'
     
     def get_used_eprs(self):
+        """
+        Retorna a lista de pares EPRs usados na camada de enlace.
+
+        Returns:
+            list: Lista de pares EPRs usados.
+        """
         self.logger.debug(f"Eprs usados na camada {self.__class__.__name__}: {self.used_eprs}")
         return self.used_eprs
     
     def get_used_qubits(self):
+        """
+        Retorna a lista de qubits usados na camada de enlace.
+
+        Returns:
+            list: Lista de qubits usados.
+        """
         self.logger.debug(f"Qubits usados na camada {self.__class__.__name__}: {self.used_qubits}")
         return self.used_qubits
     
@@ -90,14 +102,14 @@ class LinkLayer:
             # Independente de a purificação ser bem-sucedida ou não, sempre transferimos os EPRs criados
             if self._physical_layer.created_eprs:
                 self.created_eprs.extend(self._physical_layer.created_eprs)
-                self._physical_layer.created_eprs.clear()  # Limpa a lista da camada física
-            
+                self._physical_layer.created_eprs.clear()  
+
             return purification_success
 
         # Após a segunda tentativa, garante que todos os EPRs criados sejam transferidos
         if self._physical_layer.created_eprs:
             self.created_eprs.extend(self._physical_layer.created_eprs)
-            self._physical_layer.created_eprs.clear()  # Limpa a lista da camada física
+            self._physical_layer.created_eprs.clear()  
             
         return False
 
@@ -142,7 +154,7 @@ class LinkLayer:
             bob_id : int : Id do host Bob.
             purification_type : int : Tipo de protocolo de purificação.
         """
-        self._network.timeslot()  # Incrementa o timeslot para a tentativa de purificação
+        self._network.timeslot() 
 
         eprs_fail = self._physical_layer.failed_eprs
 
@@ -164,7 +176,7 @@ class LinkLayer:
         if purification_prob > 0.5:
             new_fidelity = self.purification_calculator(f1, f2, purification_type)
 
-            if new_fidelity > 0.8:  # Verifica se a nova fidelidade é maior que 0.8
+            if new_fidelity > 0.8:  
                 epr_purified = Epr((alice_id, bob_id), new_fidelity)
                 self._physical_layer.add_epr_to_channel(epr_purified, (alice_id, bob_id))
                 self._physical_layer.failed_eprs.remove(eprs_fail1)
@@ -182,7 +194,7 @@ class LinkLayer:
             self._physical_layer.failed_eprs.remove(eprs_fail2)
             self.logger.log(f'Timeslot {self._network.get_timeslot()}: Purificação falhou no canal ({alice_id}, {bob_id}) devido a baixa probabilidade de sucesso da purificação.')
             return False
-    #PARA O BFK
+
     def banded_purification(self, alice_id: int, bob_id: int, target_fidelity: float = 0.95, max_attempts: int = 10):
         """
         Realiza a purificação banded para manter a fidelidade dos pares EPRs acima de um valor alvo.

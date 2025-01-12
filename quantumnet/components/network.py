@@ -28,7 +28,6 @@ class Network():
         # Sobre a execução
         self.logger = Logger.get_instance()
         self.count_qubit = 0
-        #minimo e maximo
         self.max_prob = 1
         self.min_prob = 0.2
         self.timeslot_total = 0
@@ -221,7 +220,7 @@ class Network():
             clients (list): IDs dos nós que serão configurados como clientes.
             server (int): ID do nó que será configurado como servidor.
         """
-        # 1. Criar a topologia
+        # Cria a topologia
         if graph_type == 'grade':
             if len(dimensions) != 2:
                 raise ValueError("Para topologia 'grade', são necessárias duas dimensões.")
@@ -272,91 +271,68 @@ class Network():
         self.logger.log(f"Topologia configurada: {graph_type} ({dimensions}) com {len(clients)} clientes e 1 servidor.")
         print("Topologia configurada com sucesso para slices!")
 
-
     def calculate_paths(self, clients, server):
         """
-        Calcula os caminhos para dois slices, garantindo mínimo overlap e compartilhamento de caminhos.
-        
+        Calcula os caminhos para cada cliente, com cada cliente correspondendo a um slice.
+
         Args:
             clients (list): IDs dos nós clientes.
             server (int): ID do nó servidor.
 
         Returns:
-            tuple: Duas listas de caminhos para os slices (slice_1_paths, slice_2_paths).
+            list: Lista contendo os caminhos para cada cliente (slice).
         """
-        slice_1_paths = []  
-        slice_2_paths = []  
-        
+        slice_paths = []  # Cada cliente será um slice
         edge_weights = nx.get_edge_attributes(self._graph, 'weight')
 
-        # Para o Slice 1, calcular os caminhos para os clientes
         for client in clients:
             # Caminho mais curto do cliente para o servidor
-            path_1 = nx.shortest_path(self._graph, source=client, target=server, weight='weight')
-            slice_1_paths.append(path_1)
-            
-            # Atualiza os pesos das arestas para dar preferência ao Slice 1
-            for i in range(len(path_1) - 1):
-                edge = (path_1[i], path_1[i + 1])
+            path = nx.shortest_path(self._graph, source=client, target=server, weight='weight')
+            slice_paths.append(path)
+
+            # Penaliza as arestas para evitar overlaps em slices futuros
+            for i in range(len(path) - 1):
+                edge = (path[i], path[i + 1])
                 edge_weights[edge] = edge_weights.get(edge, 1) + 10
                 reverse_edge = (edge[1], edge[0])
                 if reverse_edge in edge_weights:
                     edge_weights[reverse_edge] += 10
 
-        # Atualiza os pesos no grafo após o cálculo do Slice 1
-        nx.set_edge_attributes(self._graph, edge_weights, 'weight')
+            # Atualiza os pesos no grafo após o cálculo de cada slice
+            nx.set_edge_attributes(self._graph, edge_weights, 'weight')
 
-        # Para o Slice 2, calcular os caminhos para os clientes
-        for client in clients:
-            # Caminho mais curto do cliente para o servidor
-            path_2 = nx.shortest_path(self._graph, source=client, target=server, weight='weight')
-            slice_2_paths.append(path_2)
-            
-            # Penaliza as arestas que são comuns com o Slice 1
-            for i in range(len(path_2) - 1):
-                edge = (path_2[i], path_2[i + 1])
-                edge_weights[edge] = edge_weights.get(edge, 1) + 10
-                reverse_edge = (edge[1], edge[0])
-                if reverse_edge in edge_weights:
-                    edge_weights[reverse_edge] += 10
+        return slice_paths
 
-        final_slice_1_paths = [slice_1_paths[0]]  
-        final_slice_2_paths = [slice_2_paths[1]] 
-
-        return final_slice_1_paths, final_slice_2_paths
-
-
-    def visualize_slices(self, clients, server, slice_1_paths, slice_2_paths):
+    def visualize_slices(self, clients, server, slice_paths):
         """
-        Visualiza o grafo com os caminhos para ambos os slices distinguidos por cor.
+        Visualiza o grafo com os caminhos para múltiplos slices distinguidos por cores.
 
         Args:
             clients (list): IDs dos nós clientes.
             server (int): ID do nó servidor.
-            slice_1_paths (list): Lista de caminhos para o primeiro slice.
-            slice_2_paths (list): Lista de caminhos para o segundo slice.
+            slice_paths (list): Lista de caminhos para cada cliente (slice).
         """
-        pos = nx.spring_layout(self._graph)  # Gera as posições para o nó 
+        pos = nx.spring_layout(self._graph)
         plt.figure(figsize=(10, 10))
 
-        # Desenha a base do gráfico
+        # Desenha a base do grafo
         nx.draw(self._graph, pos, with_labels=True, node_size=500, node_color="lightgray", edge_color="gray")
 
         nx.draw_networkx_nodes(self._graph, pos, nodelist=[server], node_color="red", label="Server")
         nx.draw_networkx_nodes(self._graph, pos, nodelist=clients, node_color="blue", label="Clients")
 
-        # Desenha o caminho do slice 1
-        for path in slice_1_paths:
-            edges = [(path[i], path[i + 1]) for i in range(len(path) - 1)]
-            nx.draw_networkx_edges(self._graph, pos, edgelist=edges, edge_color="green", width=2, label="Slice 1")
+        # Define cores para os slices
+        colors = plt.cm.tab10.colors  # Paleta de cores
 
-        # Desenha o caminho do slice 2
-        for path in slice_2_paths:
+        # Desenha os caminhos de cada slice
+        for slice_index, path in enumerate(slice_paths):
             edges = [(path[i], path[i + 1]) for i in range(len(path) - 1)]
-            nx.draw_networkx_edges(self._graph, pos, edgelist=edges, edge_color="purple", width=3, label="Slice 2")
+            nx.draw_networkx_edges(self._graph, pos, edgelist=edges,
+                                edge_color=colors[slice_index % len(colors)], width=2,
+                                label=f"Slice {slice_index + 1}")
 
-        plt.title("Paths for Both Slices")
-        plt.legend(["Server", "Clients", "Slice 1", "Slice 2"])
+        plt.title("Paths for Slices")
+        plt.legend()
         plt.show()
 
     def run_slice_simulation(self, clients, server):
@@ -368,30 +344,28 @@ class Network():
             server (int): ID do nó servidor.
 
         Returns:
-            tuple: final_slice_1_paths, final_slice_2_paths
+            list: Lista de caminhos finais para cada cliente (slice).
         """
         # Configura pesos padrão
         for edge in self._graph.edges:
-            self._graph.edges[edge]['weight'] = 1  # Configura pesos padrão
+            self._graph.edges[edge]['weight'] = 1
 
         # Calcula os caminhos para os slices
-        slice_1, slice_2 = self.calculate_paths(clients, server)
+        slice_paths = self.calculate_paths(clients, server)
 
-        # Armazena as rotas como atributos da rede
-        self.final_slice_1_paths = slice_1
-        self.final_slice_2_paths = slice_2
+        # Armazena as rotas como atributo da rede
+        self.final_slice_paths = slice_paths
 
-        print("Final Slice 1 Paths:", self.final_slice_1_paths)
-        print("Final Slice 2 Paths:", self.final_slice_2_paths)
+        print(f"Final Slice Paths for {len(clients)} slices:", self.final_slice_paths)
 
         # Visualiza os slices
-        self.visualize_slices(clients, server, slice_1, slice_2)
+        self.visualize_slices(clients, server, slice_paths)
 
         self.logger.log(f"Simulação de slices concluída para {len(clients)} clientes e servidor {server}.")
 
-        # Retorna os caminhos para a camada de aplicação poder utilizá-los
-        return self.final_slice_1_paths, self.final_slice_2_paths
-
+        # Retorna os caminhos para a camada de aplicação
+        return self.final_slice_paths
+    
         
     def set_ready_topology(self, topology_name: str, num_clients: int, *args: int, clients=None, server=None) -> None:
         """
@@ -473,7 +447,7 @@ class Network():
         """
         for host_id in self._hosts:
             # Evita que o servidor (host 0) receba qubits
-            if host_id == 0:
+            if host_id == 10:
                 self.logger.log(f"Host {host_id} é o servidor, não receberá qubits.")
                 continue
             
@@ -552,6 +526,12 @@ class Network():
                 print(f"Qubit {qubit_id} foi criado no timeslot {info['timeslot']}")
                 
     def get_created_eprs(self):
+        """
+        Obtém o total de pares EPR criados em todas as camadas da rede.
+
+        Returns:
+            int: O número total de pares EPR criados.
+        """
         total_created_eprs = (self._physical.get_created_eprs()+
                       self._link.get_created_eprs() +
                       self._network.get_created_eprs() +
@@ -566,13 +546,14 @@ class Network():
         Returns:
             int: Total de EPRs usados nas camadas física, de enlace e de rede.
         """
-        total_eprs = (self._physical.get_used_eprs()+
+        total_eprs = (
                       self._link.get_used_eprs() +
                       self._network.get_used_eprs() +
                       self._application.get_used_eprs()
         )
         return total_eprs
-    
+        # self._physical.get_used_eprs()
+        
     def get_total_useds_qubits(self):
         """
         Retorna o número total de qubits utilizados em toda a rede.
@@ -580,7 +561,6 @@ class Network():
         Returns:
             int: Total de qubits usados nas camadas física, de enlace, transporte e aplicação.
         """
-
         total_qubits = (self._physical.get_used_qubits() +
                         self._link.get_used_qubits() +
                         self._transport.get_used_qubits() +
@@ -590,62 +570,65 @@ class Network():
         return total_qubits
 
     def get_metrics(self, metrics_requested=None, output_type="csv", file_name="metrics_output.csv"):
-            """
-            Obtém as métricas da rede conforme solicitado e as exporta, printa ou armazena.
-            
-            Args:
-                metrics_requested: Lista de métricas a serem retornadas (opcional). 
-                                Se None, todas as métricas serão consideradas.
-                output_type: Especifica como as métricas devem ser retornadas.
-                            "csv" para exportar em arquivo CSV (padrão),
-                            "print" para exibir no console,
-                            "variable" para retornar as métricas em uma variável.
-                file_name: Nome do arquivo CSV (usado somente quando output_type="csv").
-            
-            Returns:
-                Se output_type for "variable", retorna um dicionário com as métricas solicitadas.
-            """
-            # Dicionário com todas as métricas possíveis
-            available_metrics = {
-                "Timeslot Total": self.get_timeslot(),
-                "EPRs Usados": self.get_total_useds_eprs(),
-                "Qubits Usados": self.get_total_useds_qubits(),
-                "Fidelidade na Camada de Transporte": self.transportlayer.avg_fidelity_on_transportlayer(),
-                "Fidelidade na Camada de Enlace": self.linklayer.avg_fidelity_on_linklayer(),
-                "Média de Rotas": self.networklayer.get_avg_size_routes()
-            }
-            
-            # Se não foram solicitadas métricas específicas, use todas
-            if metrics_requested is None:
-                metrics_requested = available_metrics.keys()
-            
-            # Filtra as métricas solicitadas
-            metrics = {metric: available_metrics[metric] for metric in metrics_requested if metric in available_metrics}
+        """
+        Obtém as métricas da rede conforme solicitado e as exporta, printa ou armazena.
+        
+        Args:
+            metrics_requested: Lista de métricas a serem retornadas (opcional). 
+                            Se None, todas as métricas serão consideradas.
+            output_type: Especifica como as métricas devem ser retornadas.
+                        "csv" para exportar em arquivo CSV (padrão),
+                        "print" para exibir no console,
+                        "variable" para retornar as métricas em uma variável.
+            file_name: Nome do arquivo CSV (usado somente quando output_type="csv").
+        
+        Returns:
+            Se output_type for "variable", retorna um dicionário com as métricas solicitadas.
+        """
+        # Dicionário com todas as métricas possíveis
+        available_metrics = {
+            "Timeslot Total": self.get_timeslot(),
+            "EPRs Usados": self.get_total_useds_eprs(),
+            "Qubits Usados": self.get_total_useds_qubits(),
+            "Fidelidade na Camada de Transporte": self.transportlayer.avg_fidelity_on_transportlayer(),
+            "Fidelidade na Camada de Enlace": self.linklayer.avg_fidelity_on_linklayer(),
+            "Média de Rotas": self.networklayer.get_avg_size_routes()
+        }
+        
+        # Se não foram solicitadas métricas específicas, use todas
+        if metrics_requested is None:
+            metrics_requested = available_metrics.keys()
+        
+        # Filtra as métricas solicitadas
+        metrics = {metric: available_metrics[metric] for metric in metrics_requested if metric in available_metrics}
 
-            # Tratamento conforme o tipo de saída solicitado
-            if output_type == "print":
+        # Tratamento conforme o tipo de saída solicitado
+        if output_type == "print":
+            for metric, value in metrics.items():
+                print(f"{metric}: {value}")
+        elif output_type == "csv":
+            current_directory = os.getcwd()
+            file_path = os.path.join(current_directory, file_name)
+            with open(file_path, mode='w', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow(['Métrica', 'Valor'])
                 for metric, value in metrics.items():
-                    print(f"{metric}: {value}")
-            elif output_type == "csv":
-                current_directory = os.getcwd()
-                file_path = os.path.join(current_directory, file_name)
-                with open(file_path, mode='w', newline='') as file:
-                    writer = csv.writer(file)
-                    writer.writerow(['Métrica', 'Valor'])
-                    for metric, value in metrics.items():
-                        writer.writerow([metric, value])
-                print(f"Métricas exportadas com sucesso para {file_path}")
-            elif output_type == "variable":
-                return metrics
-            else:
-                raise ValueError("Tipo de saída inválido. Escolha entre 'print', 'csv' ou 'variable'.")
+                    writer.writerow([metric, value])
+            print(f"Métricas exportadas com sucesso para {file_path}")
+        elif output_type == "variable":
+            return metrics
+        else:
+            raise ValueError("Tipo de saída inválido. Escolha entre 'print', 'csv' ou 'variable'.")
 
-    #0.001,0.0008875
-    #0.0067 = para testar entre 10 a 15 qubits no BFK_BQC
-    #0.0008875 = para testar entre 20 a 30 qubits no AC_BQC
-    def apply_decoherence_to_all_layers(self, decoherence_factor: float = 0.0009875):
+    def apply_decoherence_to_all_layers(self, decoherence_factor: float = 0.001):
         """
         Aplica decoerência a todos os qubits e EPRs nas camadas da rede que já avançaram nos timeslots.
+
+        Este método ajusta a fidelidade de qubits e pares EPR para simular os efeitos da decoerência
+        quântica em sistemas onde o tempo (timeslot) avança.
+
+        Args:
+            decoherence_factor (float): Fator de decoerência aplicado, que reduz a fidelidade. 
         """
         current_timeslot = self.get_timeslot()
 
@@ -683,7 +666,6 @@ class Network():
                 return True  # Retorna True se qualquer link do nó estiver ocupado
         return False
     
-    
     def reserve_link(self, node, timeslot):
         """
         Reserva um link ocupando-o no timeslot especificado.
@@ -710,10 +692,10 @@ class Network():
 
         try:
             # Reinicializar EPRs
-            self.start_eprs(num_eprs=10)  # Exemplo de reinício com 10 EPRs por canal
+            self.start_eprs(num_eprs=10)  
 
             # Reinicializar qubits nos hosts
-            self.start_hosts(num_qubits=5)  # Exemplo de reinício com 5 qubits por host
+            self.start_hosts(num_qubits=5)  
         finally:
             # Restaura o estado original do log
             Logger.DISABLED = original_disabled_state
@@ -777,7 +759,8 @@ class Network():
         for instr in saved_instructions:
             self.logger.log(f"Instrução: {instr}")
 
-        return qc, num_qubits
+        circuit_depth = qc.depth()
+        return qc, num_qubits, circuit_depth
 
     def save_circuit_instructions(self, circuit):
         """
@@ -817,10 +800,10 @@ class Network():
         if protocols is None:
             protocols = random.choice(['AC_BQC', 'BFK_BQC'])
         elif isinstance(protocols, list) and len(protocols) == 0:
-            protocols = random.choice(['AC_BQC', 'BFK_BQC'])  # Caso a lista esteja vazia, escolhe aleatoriamente
+            protocols = random.choice(['AC_BQC', 'BFK_BQC'])  
         
         # Gere um circuito quântico aleatório
-        quantum_circuit = self.generate_random_circuit(num_qubits, num_gates)
+        quantum_circuit,_,circuit_depth = self.generate_random_circuit(num_qubits, num_gates)
         
         # Cria a requisição com os dados fornecidos
         request = {
@@ -828,6 +811,7 @@ class Network():
             "bob_id": bob_id,
             "num_qubits": num_qubits,
             "quantum_circuit": quantum_circuit,
+            "circuit_depth": circuit_depth,
             "protocol": protocols, 
             "slice_path": slice_path,
             "scenario": scenario  
@@ -853,7 +837,7 @@ class Network():
             
         """
         # Gere um circuito quântico aleatório
-        quantum_circuit = self.generate_random_circuit(num_qubits, num_gates)
+        quantum_circuit,_, circuit_depth = self.generate_random_circuit(num_qubits, num_gates)
 
         # Cria a requisição com os dados fornecidos
         request = {
@@ -861,6 +845,7 @@ class Network():
             "bob_id": bob_id,
             "num_qubits": num_qubits,
             "quantum_circuit": quantum_circuit,
+            "circuit_depth": circuit_depth,
             "protocol": protocol,
             "slice_path": slice_path,
             "scenario":scenario 
@@ -915,12 +900,12 @@ class Network():
                 status = self.execute_request(request, slice_paths)
                 request['status'] = 'executado' if status else 'falhou'
                 self.logger.log(f"Requisição {request} - Status: {request['status']}")
-
-
+                
+                
     def execute_request(self, request, slice_paths=None):
         """
         Executa uma requisição, enviando os detalhes para a camada de aplicação da rede.
-        
+
         Args:
             request (dict): Requisição contendo informações como Alice, Bob, circuito, qubits e opcionalmente slice_path.
             slice_paths (dict, optional): Dicionário com os caminhos dos slices. Se None, tenta usar o slice_path da requisição ou cálculo automático.
@@ -928,48 +913,65 @@ class Network():
         alice_id = request['alice_id']
         bob_id = request['bob_id']
         num_qubits = request['num_qubits']
-        protocol = request['protocol']
-        quantum_circuit = request['quantum_circuit']
-        num_rounds = request.get('num_rounds', 10)  
-        scenario = request.get('scenario')  # Obtém o cenário da requisição ou usa 1 como padrão
-
+        protocol = request.get('protocol', 'generic') 
+        quantum_circuit = request.get('quantum_circuit', None)
+        circuit_depth = request.get('circuit_depth', 0)
+        scenario = request.get('scenario', 1)
 
         self.logger.log(f"Executando requisição: Alice {alice_id} -> Bob {bob_id}, Protocolo: {protocol}")
 
         # Verifica se a requisição já possui um slice_path
         slice_path = request.get('slice_path', None)
+        route = None
 
-        # Se não houver slice_path na requisição e slice_paths foi fornecido, tenta extrair de slice_paths
-        if slice_path is None and slice_paths:
-            slice_key = 'slice_1' if protocol == 'BFK_BQC' else 'slice_2'
-            slice_path = slice_paths.get(slice_key)
-            if slice_path:
-                self.logger.log(f"Caminho para {slice_key}: {slice_path}")
-                request['slice_path'] = slice_path
+        # Valida e extrai a rota
+        if slice_path:
+            self.logger.log(f"Slice Path fornecido: {slice_path}")
+            if isinstance(slice_path, dict):
+                route = slice_path.get('path', None)  # Extrai a rota do dicionário
+                if not route:
+                    raise ValueError(f"O slice_path fornecido é inválido: {slice_path}")
+            elif isinstance(slice_path, list):
+                route = slice_path  # Já é uma lista
             else:
-                self.logger.log(f"Warning: Nenhum caminho encontrado para o slice '{slice_key}'.")
+                raise ValueError(f"Formato inválido para slice_path: {slice_path}")
+        else:
+            # Se não há slice_path, calcula a rota automaticamente
+            self.logger.log("Nenhum slice_path fornecido. Tentando calcular rota automaticamente.")
+            route = self.networklayer.short_route_valid(alice_id, bob_id)
+
+        if not route:
+            raise ValueError("Nenhuma rota válida foi encontrada para a requisição.")
+
+        if not isinstance(route, list):
+            raise ValueError(f"Rota inválida: {route}. Esperado uma lista.")
+
+        # Log da rota antes de continuar
+        self.logger.log(f"Rota extraída para execução: {route}")
 
         success = False
-        
         # Executa o protocolo específico
-        if protocol == "AC_BQC":
-            success = self.application_layer.run_app("AC_BQC", alice_id=alice_id, bob_id=bob_id,
-                                        num_qubits=num_qubits, circuit=quantum_circuit,
-                                        slice_path=slice_path,scenario=scenario)
-        elif protocol == "BFK_BQC":
-            success = self.application_layer.run_app("BFK_BQC", alice_id=alice_id, bob_id=bob_id,
-                                        num_qubits=num_qubits, num_rounds=num_rounds,
-                                        circuit=quantum_circuit, slice_path=slice_path,scenario=scenario)
-        else:
-            self.logger.log(f"Protocolo '{protocol}' não reconhecido.")
-            request['status'] = 'erro'
-            return False
-        
+        try:
+            if protocol == "AC_BQC":
+                success = self.application_layer.run_app(
+                    "AC_BQC", alice_id=alice_id, bob_id=bob_id,
+                    num_qubits=num_qubits, circuit=quantum_circuit,
+                    slice_path=route, scenario=scenario, circuit_depth=circuit_depth)
+            elif protocol == "BFK_BQC":
+                success = self.application_layer.run_app(
+                    "BFK_BQC", alice_id=alice_id, bob_id=bob_id,
+                    num_qubits=num_qubits, num_rounds=circuit_depth,
+                    circuit=quantum_circuit, slice_path=route, scenario=scenario)
+            else:
+                # Simulação básica sem protocolo
+                success = self.transport_layer.simple_teleport(alice_id, bob_id, num_qubits, route, scenario)
+        except Exception as e:
+            self.logger.log(f"Erro ao executar protocolo: {str(e)}")
+            raise
+
+        # Atualiza o status da requisição
         request['status'] = 'executado' if success else 'falhou'
-        
-        if success:
-            self.logger.log(f"Requisição executada com sucesso: {request}")
-        else:
-            self.logger.log(f"Falha ao executar requisição: {request}")
+        self.logger.log(f"Resultado da execução: {request['status']}")
 
         return success
+
