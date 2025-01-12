@@ -131,3 +131,9 @@ O controlador é o responsável por gerenciar a alocação, execução e monitor
 - Gera relatórios detalhados com informações sobre requisições:
   - Sucessos, falhas e detalhes das rotas utilizadas.
 - Exibe métricas úteis para avaliar a eficiência do agendamento e a qualidade da rede.
+
+---
+
+Este projeto foi elaborado como parte de um artigo em processo de revisão para o SBRC 2025, com o objetivo de contribuir para o avanço das técnicas de simulação e gerenciamento de redes quânticas de alta eficiência e confiabilidade. 
+
+As funcionalidades desenvolvidas asseguram que o sistema gerencie de maneira eficiente as requisições, alocação de rotas e execução de protocolos, proporcionando uma comunicação quântica cega confiável e com alta fidelidade entre os diferentes nós da rede durante as simulações e operações em slices.
