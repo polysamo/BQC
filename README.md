@@ -1,11 +1,7 @@
-# Quantumnet - Blind Quantum Computing 
+# Computação Quântica Cega em Redes de Entrelaçamento: Gerenciando e Alocando Recursos
 
-Este projeto simula uma rede quântica para transmissão de informações entre um remetente e um destinatário. A rede é projetada com diferentes topologias, abrangendo todas as camadas necessárias para um funcionamento eficiente. O repositório contém os códigos em Python para execução da simulação.
-
-## Descrição
-
-O repositório inclui os componentes essenciais da rede e do host, além dos qubits e pares EPR. Pode haver visualização de três tipos de topologia: anel, linha e grade. O projeto, também, abrange todas as camadas necessárias, desde a física até a aplicação, garantindo o funcionamento completo da rede quântica.
-
+O rápido avanço dos serviços de Computação Quântica levanta preocupações significativas de privacidade e segurança, uma vez que dados sensíveis e estruturas de algoritmos são compartilhados com servidores quânticos potencialmente não confiáveis. Protocolos de Computação Quântica Cega(Blind Quantum Computing - BQC) abordam esses desafios ao garantir a confidencialidade das operações quânticas e preservar a integridade dos resultados. No entanto, o gerenciamento eficiente de recursos em redes de entrelaçamento para suportar aplicações BQC continua sendo um problema em aberto. Este artigo propõe uma abordagem para o gerenciamento de recursos em redes de entrelaçamento que suportam protocolos BQC, especificamente CHILDS e BFK. Nossa abordagem inclui a alocação de rotas, a segmentação da rede em fatias adaptadas às necessidades de cada aplicação BQC e a reutilização dinâmica de pares entrelaçados (EPRs) para minimizar o desperdício de recursos. Os resultados das simulações indicam a eficácia da abordagem proposta na gestão de recursos e redução do desperdício de EPRs sob diferentes condições de rede.
+   
 ## Diretórios 
 - ``quantumnet``: 
   - ``/components`` : arquivos básicos para o realização das simulações.
@@ -132,6 +128,39 @@ O controlador é o responsável por gerenciar a alocação, execução e monitor
   - Sucessos, falhas e detalhes das rotas utilizadas.
 - Exibe métricas úteis para avaliar a eficiência do agendamento e a qualidade da rede.
 
+## Demonstração
+Em [``Simulação BQC``](https://github.com/quantumgercom/Blind-Quantum-Computing/blob/main/Guia%20-%20BQC.ipynb) é possível conferir a base para criação das simulações. Este Notebook contém um exemplo de simulação explicado passo a passo.
+
+## Ambiente de testes
+A ferramenta foi executada e testada na prática nos seguintes ambientes:
+1. Windows 11 <br>
+   Kernel = 10.0.22621.3085 <br>
+   Python = Python 3.11.4 <br>
+   Módulos Python conforme [requirements.txt](https://github.com/quantumgercom/Blind-Quantum-Computing/blob/main/requirements.txt) <br>
+
+3. Ubuntu 24.04.1 LTS <br>
+   Kernel Version: 6.8.0-51-generic <br>
+   Python = 3.12.3 <br>
+   Módulos Python conforme [requirements.txt](https://github.com/quantumgercom/QuatumNet/blob/main/requirements.txt) <br>
+   
+## Instruções de instalação
+1. Clonar o repositório
+
+   ````
+   $ git clone https://github.com/quantumgercom/QuatumNet.git
+   ````
+3. Instalar as dependências
+   
+   As principais ferramentas utilizadas são:
+``Matplotlib``, ``Networkx``, além do ``Jupyter Notebook``. Para obtê-las, utiliza-se o ``pip``. Isso pode ser feito individualmente, ou por meio do arquivo ``requiriments.txt`` deste repositório com o seguinte comando no terminal:
+   ````
+   $ pip install -r requirements.txt
+   ````
+   Este documento contém todas as dependências utilizadas pelo ambiente virtual onde o código foi desenvolvimento.
+5. Pronto
+
+   Após clonar o repositório e instalar as dependências, os notebooks e o restante dos códigos já podem ser executados e manipualdos.
+   
 ---
 
 Este projeto foi elaborado como parte de um artigo em processo de revisão para o SBRC 2025, com o objetivo de contribuir para o avanço das técnicas de simulação e gerenciamento de redes quânticas de alta eficiência e confiabilidade. 
